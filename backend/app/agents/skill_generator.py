@@ -7,10 +7,11 @@ from app.database import get_portal
 from app.agents.planner import get_llm
 from app.agents.skill_manager import parse_and_validate_skill_yaml
 
-def generate_portal_skill_yaml(portal_id: str, prompt_description: str, provider: str = "gemini") -> str:
+def generate_portal_skill_yaml(portal_id: str, prompt_description: str, provider: str = "gemini", existing_yaml: Optional[str] = None) -> str:
     """
     Skill Generator Agent: Generates a fully validated YAML skill config
     based on the user's plain-text prompt description and the portal's active Swagger spec.
+    If existing_yaml is provided, it refines the existing skill draft instead of starting from scratch.
     """
     portal = get_portal(portal_id)
     if not portal:
@@ -44,14 +45,29 @@ def generate_portal_skill_yaml(portal_id: str, prompt_description: str, provider
         except Exception:
             swagger_context = f"Active Swagger Spec raw guidelines:\n{swagger_doc[:2000]}"
 
+    refinement_instruction = ""
+    if existing_yaml:
+        refinement_instruction = f"""
+We have an EXISTING Project Skill YAML that needs to be updated:
+```yaml
+{existing_yaml}
+```
+
+The user wants to make the following modification/refinement:
+"{prompt_description}"
+
+You must modify the existing YAML runbook to incorporate this request. Maintain all existing fields and structure where possible. Only modify steps or fields necessary to satisfy the request. Ensure it still adheres to the schema below.
+"""
+
     system_prompt = f"""
-You are an expert Systems Architect and Skill Builder Agent. Your job is to create a valid, fully compiled **Project Skill YAML** file that our LangGraph agent can read and execute.
+You are an expert Systems Architect and Skill Builder Agent. Your job is to create or refine a valid, fully compiled **Project Skill YAML** file that our LangGraph agent can read and execute.
 This skill represents a sequential runbook to automate operations inside the portal with ID '{portal_id}'.
 
 Here is the target portal's active API Swagger context:
 {swagger_context}
+{refinement_instruction}
 
-The user wants to create a skill that does:
+{"The user wants to create a skill that does:" if not existing_yaml else "Based on the user refinement request above, modify the YAML. Note the general schema guidelines:"}
 "{prompt_description}"
 
 You must output a single, valid YAML document that adheres exactly to the following ProjectSkillSchema format:
@@ -81,7 +97,7 @@ steps:
     requires_approval: true # Enforce human-in-the-loop for POST, PUT, DELETE write calls
 ```
 
-Rules for Skill Drafting:
+Rules for Skill Drafting/Refining:
 1. Make sure to use the exact `operationId` under `tool_name` from the swagger context.
 2. If the user request implies collecting details (like email, username, team), create a `collect_input` step FIRST to gather them.
 3. If an API call is state-modifying (e.g. POST, PUT, DELETE), always set `requires_approval: true`.

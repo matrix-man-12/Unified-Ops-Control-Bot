@@ -5,12 +5,17 @@ import ChatWindow from './components/ChatWindow';
 import DynamicForm from './components/DynamicForm';
 import ConfirmationCard from './components/ConfirmationCard';
 import FileUploader from './components/FileUploader';
+import SkillStudio from './components/SkillStudio';
 
 export default function App() {
   const [activePortalId, setActivePortalId] = useState(null);
   const [modelProvider, setModelProvider] = useState('gemini'); // gemini, openai, agent_builder
   const [session_id, setSessionId] = useState(() => Math.random().toString(36).substring(7));
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Active Workspace View (chat or studio)
+  const [activeView, setActiveView] = useState('chat');
+  const [studioSkill, setStudioSkill] = useState(null);
 
   // WebSocket connection state
   const [socket, setSocket] = useState(null);
@@ -165,6 +170,10 @@ export default function App() {
         activePortalId={activePortalId} 
         onSelectPortal={setActivePortalId}
         refreshTrigger={refreshTrigger}
+        onOpenSkillStudio={(skill) => {
+          setStudioSkill(skill);
+          setActiveView('studio');
+        }}
       />
 
       {/* 2. Main Operational Workspace */}
@@ -208,79 +217,93 @@ export default function App() {
           </div>
         </div>
 
-        {/* B. Operational Chat Area (Stepper + History) */}
-        <div style={{ flex: '1', overflow: 'hidden', position: 'relative', marginBottom: '20px' }}>
-          
-          <ChatWindow 
-            messages={messages} 
-            statusLogs={statusLogs}
-            plan={plan}
-            currentStepIndex={currentStepIndex}
-            isConnected={isConnected}
+        {activeView === 'studio' ? (
+          <SkillStudio 
+            portalId={activePortalId}
+            skill={studioSkill}
+            onClose={() => setActiveView('chat')}
+            onSaveSuccess={() => {
+              setActiveView('chat');
+              setRefreshTrigger(t => t + 1);
+            }}
           />
-
-          {/* C. Dynamic HITL Form Overlay */}
-          {interruptPayload && interruptPayload.type === 'form_request' && (
-            <>
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', zIndex: '90', borderRadius: '16px', backdropFilter: 'blur(4px)' }} />
-              <DynamicForm 
-                stepId={interruptPayload.step_id}
-                title={interruptPayload.title}
-                fields={interruptPayload.fields}
-                onSubmit={handleFormSubmit}
-                onCancel={() => setInterruptPayload(null)}
+        ) : (
+          <>
+            {/* B. Operational Chat Area (Stepper + History) */}
+            <div style={{ flex: '1', overflow: 'hidden', position: 'relative', marginBottom: '20px' }}>
+              
+              <ChatWindow 
+                messages={messages} 
+                statusLogs={statusLogs}
+                plan={plan}
+                currentStepIndex={currentStepIndex}
+                isConnected={isConnected}
               />
-            </>
-          )}
 
-          {/* D. Dynamic HITL Approval Card Overlay */}
-          {interruptPayload && interruptPayload.type === 'hitl_request' && (
-            <>
-              <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', zIndex: '90', borderRadius: '16px', backdropFilter: 'blur(4px)' }} />
-              <ConfirmationCard 
-                stepId={interruptPayload.step_id}
-                title={interruptPayload.title}
-                mode={interruptPayload.mode}
-                toolName={interruptPayload.tool_name}
-                inputs={interruptPayload.inputs}
-                message={interruptPayload.message}
-                onApprove={() => handleHitlResponse(true)}
-                onReject={() => handleHitlResponse(false)}
-              />
-            </>
-          )}
-        </div>
+              {/* C. Dynamic HITL Form Overlay */}
+              {interruptPayload && interruptPayload.type === 'form_request' && (
+                <>
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', zIndex: '90', borderRadius: '16px', backdropFilter: 'blur(4px)' }} />
+                  <DynamicForm 
+                    stepId={interruptPayload.step_id}
+                    title={interruptPayload.title}
+                    fields={interruptPayload.fields}
+                    onSubmit={handleFormSubmit}
+                    onCancel={() => setInterruptPayload(null)}
+                  />
+                </>
+              )}
 
-        {/* E. Composing Dashboard Footer (Input + Drag File) */}
-        <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <form onSubmit={handleSendMessage} style={{ flex: '1', display: 'flex', gap: '12px' }}>
-              <input 
-                disabled={!activePortalId}
-                className="form-input" 
-                value={chatInput} 
-                onChange={(e) => setChatInput(e.target.value)} 
-                placeholder={activePortalId ? "Explain the task you want to execute (e.g. Create a developer user or verify department)..." : "Please connect and select a portal config from the left sidebar to start..."}
-              />
-              <button 
-                type="submit" 
-                disabled={!activePortalId || (!chatInput.trim() && !attachedFilePath)}
-                className="btn-gradient" 
-                style={{ padding: '0 20px', borderRadius: '10px' }}
-              >
-                <Send size={15} />
-              </button>
-            </form>
-          </div>
-          
-          {/* File Uploading Tray */}
-          {activePortalId && (
-            <FileUploader 
-              onUploadComplete={handleFileUpload} 
-              activePortalId={activePortalId}
-            />
-          )}
-        </div>
+              {/* D. Dynamic HITL Approval Card Overlay */}
+              {interruptPayload && interruptPayload.type === 'hitl_request' && (
+                <>
+                  <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.6)', zIndex: '90', borderRadius: '16px', backdropFilter: 'blur(4px)' }} />
+                  <ConfirmationCard 
+                    stepId={interruptPayload.step_id}
+                    title={interruptPayload.title}
+                    mode={interruptPayload.mode}
+                    toolName={interruptPayload.tool_name}
+                    inputs={interruptPayload.inputs}
+                    message={interruptPayload.message}
+                    onApprove={() => handleHitlResponse(true)}
+                    onReject={() => handleHitlResponse(false)}
+                  />
+                </>
+              )}
+            </div>
+
+            {/* E. Composing Dashboard Footer (Input + Drag File) */}
+            <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <form onSubmit={handleSendMessage} style={{ flex: '1', display: 'flex', gap: '12px' }}>
+                  <input 
+                    disabled={!activePortalId}
+                    className="form-input" 
+                    value={chatInput} 
+                    onChange={(e) => setChatInput(e.target.value)} 
+                    placeholder={activePortalId ? "Explain the task you want to execute (e.g. Create a developer user or verify department)..." : "Please connect and select a portal config from the left sidebar to start..."}
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={!activePortalId || (!chatInput.trim() && !attachedFilePath)}
+                    className="btn-gradient" 
+                    style={{ padding: '0 20px', borderRadius: '10px' }}
+                  >
+                    <Send size={15} />
+                  </button>
+                </form>
+              </div>
+              
+              {/* File Uploading Tray */}
+              {activePortalId && (
+                <FileUploader 
+                  onUploadComplete={handleFileUpload} 
+                  activePortalId={activePortalId}
+                />
+              )}
+            </div>
+          </>
+        )}
 
       </div>
     </div>

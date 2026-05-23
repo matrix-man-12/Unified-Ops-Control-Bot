@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Plus, Trash2, Key, Link2, FileCode, CheckCircle2, Upload, Sparkles, Edit2 } from 'lucide-react';
 
-export default function PortalSelector({ activePortalId, onSelectPortal, refreshTrigger }) {
+export default function PortalSelector({ activePortalId, onSelectPortal, refreshTrigger, onOpenSkillStudio }) {
   const [portals, setPortals] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [skills, setSkills] = useState([]);
@@ -33,7 +33,7 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
     } else {
       setSkills([]);
     }
-  }, [activePortalId]);
+  }, [activePortalId, refreshTrigger]);
 
   const fetchPortals = async () => {
     try {
@@ -363,11 +363,41 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {skills.map(s => (
-              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-neon)', borderRadius: '8px', fontSize: '12px' }}>
+              <div key={s.id} className="hover-neon-border" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-neon)', borderRadius: '8px', fontSize: '12px' }}>
                 <FileCode size={14} style={{ color: 'var(--color-primary)' }} />
-                <div style={{ flex: '1', display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontWeight: '500' }}>{s.name}</span>
+                <div style={{ flex: '1', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  <span style={{ fontWeight: '500', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{s.name}</span>
                   <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{s.id}.yaml</span>
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <button 
+                    onClick={() => onOpenSkillStudio(s)} 
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                    title="Edit and Refine Skill Runbook"
+                  >
+                    <Edit2 size={13} className="hover-accent" />
+                  </button>
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      if (!confirm('Are you sure you want to delete this skill runbook?')) return;
+                      try {
+                        const res = await fetch(`/api/skills/${s.id}`, { method: 'DELETE' });
+                        if (res.ok) {
+                          fetchSkills(activePortalId);
+                        } else {
+                          alert('Failed to delete skill.');
+                        }
+                      } catch (err) {
+                        alert('Error: ' + err.message);
+                      }
+                    }} 
+                    style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
+                    title="Remove Skill"
+                  >
+                    <Trash2 size={13} className="hover-accent" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -386,58 +416,13 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
           {/* Skill Builder Agent Section */}
           <div style={{ borderTop: '1px solid var(--border-neon)', paddingTop: '16px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button 
-              onClick={() => setShowSkillBuilder(!showSkillBuilder)}
-              className="btn-outline" 
-              style={{ display: 'flex', gap: '6px', justifyContent: 'center', fontSize: '12px', borderColor: 'rgba(179,139,77,0.2)', background: 'rgba(179,139,77,0.02)' }}
+              onClick={() => onOpenSkillStudio(null)}
+              className="btn-outline animate-glow" 
+              style={{ display: 'flex', gap: '6px', justifyContent: 'center', fontSize: '12px', borderColor: 'rgba(179,139,77,0.4)', background: 'rgba(179,139,77,0.06)' }}
             >
               <Sparkles size={14} style={{ color: 'var(--color-secondary)' }} />
-              🤖 Ask Skill Agent to Write Runbook
+              🤖 Ask Agent to Write Runbook
             </button>
-
-            {showSkillBuilder && (
-              <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px', background: 'rgba(139,123,102,0.03)', border: '1px solid var(--border-neon)', borderRadius: '10px' }}>
-                <textarea 
-                  className="form-input" 
-                  style={{ fontSize: '12px', height: '70px', resize: 'vertical' }}
-                  value={skillPrompt}
-                  onChange={e => setSkillPrompt(e.target.value)}
-                  placeholder="Describe the skill (e.g., 'Verify if team exists, collect user details, and call create_user API with approval')..."
-                />
-                
-                <button 
-                  type="button"
-                  disabled={draftingSkill || !skillPrompt.trim()}
-                  onClick={handleGenerateSkill}
-                  className="btn-gradient" 
-                  style={{ padding: '8px', fontSize: '12px' }}
-                >
-                  {draftingSkill ? 'Drafting Runbook...' : 'Draft Runbook YAML'}
-                </button>
-
-                {yamlDraft && (
-                  <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Agent Generated YAML Draft:</span>
-                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>{generatedSkillId}.yaml</span>
-                    </div>
-                    <textarea 
-                      className="form-input" 
-                      style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', height: '140px', resize: 'vertical' }}
-                      value={yamlDraft}
-                      onChange={e => setYamlDraft(e.target.value)}
-                    />
-                    <button 
-                      type="button"
-                      onClick={handleSaveDraftedSkill}
-                      className="btn-gradient"
-                      style={{ padding: '8px', background: 'linear-gradient(135deg, #0d9488, #0f766e)', boxShadow: '0 4px 14px rgba(13, 148, 136, 0.2)' }}
-                    >
-                      Compile & Register Skill
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
       )}

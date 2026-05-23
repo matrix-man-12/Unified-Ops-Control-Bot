@@ -92,6 +92,7 @@ class SkillGenerateInput(BaseModel):
     portal_id: str
     prompt: str
     model_provider: Optional[str] = "gemini"
+    existing_yaml: Optional[str] = None
 
 @app.post("/api/skills/generate")
 def generate_skill(payload: SkillGenerateInput):
@@ -100,7 +101,8 @@ def generate_skill(payload: SkillGenerateInput):
         yaml_draft = generate_portal_skill_yaml(
             portal_id=payload.portal_id,
             prompt_description=payload.prompt,
-            provider=payload.model_provider
+            provider=payload.model_provider,
+            existing_yaml=payload.existing_yaml
         )
         return {
             "success": True,
