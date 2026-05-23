@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Key, Link2, FileCode, CheckCircle2, Upload, Sparkles } from 'lucide-react';
+import { Settings, Plus, Trash2, Key, Link2, FileCode, CheckCircle2, Upload, Sparkles, Edit2 } from 'lucide-react';
 
 export default function PortalSelector({ activePortalId, onSelectPortal, refreshTrigger }) {
   const [portals, setPortals] = useState([]);
@@ -14,6 +14,7 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
   const [swaggerDoc, setSwaggerDoc] = useState('');
   
   const [uploadingSkill, setUploadingSkill] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   
   // Skill Builder Agent states
   const [showSkillBuilder, setShowSkillBuilder] = useState(false);
@@ -99,6 +100,7 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
       });
       if (res.ok) {
         setShowAddForm(false);
+        setIsEditing(false);
         // Reset states
         setPortalId('');
         setName('');
@@ -126,6 +128,21 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
     } catch (err) {
       console.error('Delete portal error', err);
     }
+  };
+
+  const handleEditPortal = (p, e) => {
+    e.stopPropagation();
+    setPortalId(p.id);
+    setName(p.name);
+    setBaseUrl(p.base_url);
+    
+    // Map headers dictionary back to dynamic key-value list [{key, value}]
+    const mappedHeaders = Object.entries(p.headers).map(([key, value]) => ({ key, value }));
+    setHeaders(mappedHeaders.length > 0 ? mappedHeaders : [{ key: '', value: '' }]);
+    
+    setSwaggerDoc(p.swagger_doc || '');
+    setIsEditing(true);
+    setShowAddForm(true);
   };
 
   const handleSkillUpload = async (e) => {
@@ -225,13 +242,21 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
 
   return (
     <div className="sidebar-config glass-panel" style={{ gap: '20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyBetween: 'space-between' }}>
         <h2 style={{ fontSize: '18px', display: 'flex', alignItems: 'center', gap: '8px', fontFamily: 'var(--font-header)' }}>
           <Settings size={20} style={{ color: 'var(--color-secondary)' }} />
           Control Portals
         </h2>
         <button 
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={() => {
+            setIsEditing(false);
+            setPortalId('');
+            setName('');
+            setBaseUrl('');
+            setHeaders([{ key: 'Authorization', value: 'Bearer ' }]);
+            setSwaggerDoc('');
+            setShowAddForm(!showAddForm);
+          }}
           className="btn-outline" 
           style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', gap: '4px' }}
         >
@@ -241,9 +266,12 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
 
       {showAddForm ? (
         <form onSubmit={handleSavePortal} className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <h3 style={{ fontSize: '14px', fontFamily: 'var(--font-header)', color: 'var(--color-primary)', marginBottom: '4px' }}>
+            {isEditing ? 'Edit Portal Configuration' : 'Register New Portal'}
+          </h3>
           <div>
             <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Portal Nickname ID (e.g. ops-admin)</label>
-            <input required className="form-input" value={portalId} onChange={e => setPortalId(e.target.value)} placeholder="portal-id" />
+            <input required disabled={isEditing} className="form-input" value={portalId} onChange={e => setPortalId(e.target.value)} placeholder="portal-id" />
           </div>
           
           <div>
@@ -280,8 +308,10 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
           </div>
 
           <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-            <button type="submit" className="btn-gradient" style={{ flex: '1', padding: '10px' }}>Register</button>
-            <button type="button" onClick={() => setShowAddForm(false)} className="btn-outline" style={{ flex: '1', padding: '10px' }}>Cancel</button>
+            <button type="submit" className="btn-gradient" style={{ flex: '1', padding: '10px' }}>
+              {isEditing ? 'Update Config' : 'Register'}
+            </button>
+            <button type="button" onClick={() => { setShowAddForm(false); setIsEditing(false); }} className="btn-outline" style={{ flex: '1', padding: '10px' }}>Cancel</button>
           </div>
         </form>
       ) : (
@@ -295,9 +325,14 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: '600', fontSize: '14px', letterSpacing: '-0.01em' }}>{p.name}</span>
-                <button onClick={(e) => handleDeletePortal(p.id, e)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }} className="hover:text-red-500">
-                  <Trash2 size={13} className="hover-accent" />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <button onClick={(e) => handleEditPortal(p, e)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0 4px', marginRight: '6px' }}>
+                    <Edit2 size={13} className="hover-accent" />
+                  </button>
+                  <button onClick={(e) => handleDeletePortal(p.id, e)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '0 4px' }}>
+                    <Trash2 size={13} className="hover-accent" />
+                  </button>
+                </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
                 <Link2 size={12} />
