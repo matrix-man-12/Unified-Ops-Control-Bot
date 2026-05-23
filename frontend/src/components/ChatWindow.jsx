@@ -119,13 +119,13 @@ export default function ChatWindow({ messages, statusLogs, plan, currentStepInde
         </div>
 
         {/* B. Terminal Console Logger */}
-        <div className="glass-panel" style={{ flex: '0.9', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px', background: 'black', border: '1px solid rgba(255,255,255,0.03)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px', marginBottom: '8px', fontFamily: 'var(--font-header)' }}>
+        <div className="glass-panel" style={{ flex: '0.9', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '16px', background: '#1c1917', border: '1px solid var(--border-neon)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-muted)', fontSize: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px', marginBottom: '8px', fontFamily: 'var(--font-header)' }}>
             <Terminal size={14} style={{ color: 'var(--color-secondary)' }} />
-            <span>Systems Operator Console</span>
+            <span style={{ color: 'var(--text-muted)' }}>Systems Operator Console</span>
           </div>
           
-          <div style={{ flex: '1', overflowY: 'auto', fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#a7f3d0', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ flex: '1', overflowY: 'auto', fontFamily: 'var(--font-mono)', fontSize: '11px', color: '#f5f5f4', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {statusLogs.map((log, index) => (
               <div key={index} style={{ wordBreak: 'break-all', lineHeight: '1.4' }}>
                 <span style={{ color: 'var(--color-secondary)' }}>&gt;</span> {log}

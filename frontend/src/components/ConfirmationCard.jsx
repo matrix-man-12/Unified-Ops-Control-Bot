@@ -50,12 +50,12 @@ export default function ConfirmationCard({ stepId, title, mode, toolName, inputs
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '22px' }}>
         {isDestructive ? (
           <>
-            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-neon)' }}>
+            <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-neon)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target API Operation</div>
               <div style={{ fontSize: '13px', fontWeight: '600', fontFamily: 'var(--font-mono)', color: 'var(--color-secondary)' }}>{toolName}</div>
             </div>
             
-            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-neon)' }}>
+            <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid var(--border-neon)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mapped Request Parameters</div>
               <pre style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)', overflowX: 'auto', whiteSpace: 'pre-wrap' }}>
                 {JSON.stringify(inputs, null, 2)}

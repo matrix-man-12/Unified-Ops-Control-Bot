@@ -105,7 +105,7 @@ export default function FileUploader({ onUploadComplete, activePortalId }) {
             padding: '24px',
             textAlign: 'center',
             cursor: 'pointer',
-            background: dragActive ? 'rgba(6, 182, 212, 0.02)' : 'rgba(0,0,0,0.1)',
+            background: dragActive ? 'rgba(179, 139, 77, 0.05)' : 'rgba(139, 123, 102, 0.03)',
             transition: 'var(--transition-smooth)'
           }}
           className="hover:border-[var(--color-secondary)]"
@@ -117,7 +117,7 @@ export default function FileUploader({ onUploadComplete, activePortalId }) {
             onChange={handleChange}
             accept=".csv,.xlsx,.xls,.json,.png,.jpg,.jpeg,.mp4"
           />
-          <UploadCloud size={32} style={{ color: 'var(--text-secondary)', marginBottom: '8px', marginInline: 'auto' }} />
+          <UploadCloud size={32} style={{ color: 'var(--text-muted)', marginBottom: '8px', marginInline: 'auto' }} />
           <p style={{ fontSize: '13px', fontWeight: '500', color: 'var(--text-primary)' }}>
             Drag and drop your operational attachments
           </p>
@@ -133,7 +133,7 @@ export default function FileUploader({ onUploadComplete, activePortalId }) {
             display: 'flex', 
             alignItems: 'center', 
             gap: '14px',
-            background: 'rgba(255,255,255,0.01)'
+            background: '#ffffff'
           }}
         >
           {getFileIcon(file.name)}
@@ -151,7 +151,7 @@ export default function FileUploader({ onUploadComplete, activePortalId }) {
             </div>
             
             {uploadStatus === 'uploading' && (
-              <div style={{ width: '100%', height: '3px', background: 'rgba(255,255,255,0.05)', borderRadius: '9px', overflow: 'hidden' }}>
+              <div style={{ width: '100%', height: '3px', background: 'rgba(0,0,0,0.05)', borderRadius: '9px', overflow: 'hidden' }}>
                 <div style={{ width: `${progress}%`, height: '100%', background: 'var(--gradient-brand)', borderRadius: '9px', transition: 'var(--transition-smooth)' }} />
               </div>
             )}
@@ -160,9 +160,9 @@ export default function FileUploader({ onUploadComplete, activePortalId }) {
           <button 
             onClick={clearFile}
             style={{ 
-              background: 'rgba(255,255,255,0.03)', 
+              background: 'rgba(139, 123, 102, 0.08)', 
               border: 'none', 
-              color: 'var(--text-muted)', 
+              color: 'var(--text-secondary)', 
               width: '24px', 
               height: '24px', 
               borderRadius: '50%', 
