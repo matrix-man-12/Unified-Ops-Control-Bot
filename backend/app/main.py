@@ -93,6 +93,27 @@ def remove_skill(skill_id: str):
     delete_skill(skill_id)
     return {"success": True}
 
+class SkillGenerateInput(BaseModel):
+    portal_id: str
+    prompt: str
+    model_provider: Optional[str] = "gemini"
+
+@app.post("/api/skills/generate")
+def generate_skill(payload: SkillGenerateInput):
+    try:
+        from app.agents.skill_generator import generate_portal_skill_yaml
+        yaml_draft = generate_portal_skill_yaml(
+            portal_id=payload.portal_id,
+            prompt_description=payload.prompt,
+            provider=payload.model_provider
+        )
+        return {
+            "success": True,
+            "yaml_draft": yaml_draft
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
 # --- REST File uploads pipeline ---
 @app.post("/api/upload")
 async def upload_document_or_media(file: UploadFile = File(...)):

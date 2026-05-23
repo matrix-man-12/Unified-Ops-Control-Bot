@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Key, Link2, FileCode, CheckCircle2, Upload } from 'lucide-react';
+import { Settings, Plus, Trash2, Key, Link2, FileCode, CheckCircle2, Upload, Sparkles } from 'lucide-react';
 
 export default function PortalSelector({ activePortalId, onSelectPortal, refreshTrigger }) {
   const [portals, setPortals] = useState([]);
@@ -14,6 +14,13 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
   const [swaggerDoc, setSwaggerDoc] = useState('');
   
   const [uploadingSkill, setUploadingSkill] = useState(false);
+  
+  // Skill Builder Agent states
+  const [showSkillBuilder, setShowSkillBuilder] = useState(false);
+  const [skillPrompt, setSkillPrompt] = useState('');
+  const [draftingSkill, setDraftingSkill] = useState(false);
+  const [yamlDraft, setYamlDraft] = useState('');
+  const [generatedSkillId, setGeneratedSkillId] = useState('');
 
   useEffect(() => {
     fetchPortals();
@@ -148,6 +155,74 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
     }
   };
 
+  const handleGenerateSkill = async () => {
+    if (!skillPrompt.trim() || !activePortalId) return;
+    setDraftingSkill(true);
+    setYamlDraft('');
+    try {
+      const res = await fetch('/api/skills/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          portal_id: activePortalId,
+          prompt: skillPrompt,
+          model_provider: 'gemini'
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setYamlDraft(data.yaml_draft);
+        
+        // Extract a clean unique ID from the drafted yaml if possible
+        const idMatch = data.yaml_draft.match(/^id:\s*([^\s\n]+)/m);
+        if (idMatch && idMatch[1]) {
+          setGeneratedSkillId(idMatch[1].trim());
+        } else {
+          setGeneratedSkillId(`custom_skill_${Math.random().toString(36).substring(5)}`);
+        }
+      } else {
+        alert('Skill Builder Agent returned an error.');
+      }
+    } catch (err) {
+      alert('Failed to contact Skill Builder Agent.');
+    } finally {
+      setDraftingSkill(false);
+    }
+  };
+
+  const handleSaveDraftedSkill = async () => {
+    if (!yamlDraft.trim() || !activePortalId) return;
+    
+    // Create File block directly from string
+    const blob = new Blob([yamlDraft], { type: 'text/yaml' });
+    const file = new File([blob], `${generatedSkillId || 'skill_runbook'}.yaml`, { type: 'text/yaml' });
+    
+    setUploadingSkill(true);
+    const formData = new FormData();
+    formData.append('portal_id', activePortalId);
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/skills', {
+        method: 'POST',
+        body: formData
+      });
+      if (res.ok) {
+        setYamlDraft('');
+        setSkillPrompt('');
+        setShowSkillBuilder(false);
+        fetchSkills(activePortalId);
+      } else {
+        const errorData = await res.json();
+        alert('Validation error: ' + errorData.detail);
+      }
+    } catch (err) {
+      alert('Failed to register generated runbook.');
+    } finally {
+      setUploadingSkill(false);
+    }
+  };
+
   return (
     <div className="sidebar-config glass-panel" style={{ gap: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -272,6 +347,63 @@ export default function PortalSelector({ activePortalId, onSelectPortal, refresh
             {uploadingSkill ? 'Analyzing...' : 'Teach Portal a Skill (.yaml)'}
             <input type="file" accept=".yaml,.yml" onChange={handleSkillUpload} style={{ display: 'none' }} />
           </label>
+
+          {/* Skill Builder Agent Section */}
+          <div style={{ borderTop: '1px solid var(--border-neon)', paddingTop: '16px', marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button 
+              onClick={() => setShowSkillBuilder(!showSkillBuilder)}
+              className="btn-outline" 
+              style={{ display: 'flex', gap: '6px', justifyContent: 'center', fontSize: '12px', borderColor: 'rgba(179,139,77,0.2)', background: 'rgba(179,139,77,0.02)' }}
+            >
+              <Sparkles size={14} style={{ color: 'var(--color-secondary)' }} />
+              🤖 Ask Skill Agent to Write Runbook
+            </button>
+
+            {showSkillBuilder && (
+              <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px', background: 'rgba(139,123,102,0.03)', border: '1px solid var(--border-neon)', borderRadius: '10px' }}>
+                <textarea 
+                  className="form-input" 
+                  style={{ fontSize: '12px', height: '70px', resize: 'vertical' }}
+                  value={skillPrompt}
+                  onChange={e => setSkillPrompt(e.target.value)}
+                  placeholder="Describe the skill (e.g., 'Verify if team exists, collect user details, and call create_user API with approval')..."
+                />
+                
+                <button 
+                  type="button"
+                  disabled={draftingSkill || !skillPrompt.trim()}
+                  onClick={handleGenerateSkill}
+                  className="btn-gradient" 
+                  style={{ padding: '8px', fontSize: '12px' }}
+                >
+                  {draftingSkill ? 'Drafting Runbook...' : 'Draft Runbook YAML'}
+                </button>
+
+                {yamlDraft && (
+                  <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '6px' }}>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Agent Generated YAML Draft:</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-primary)' }}>{generatedSkillId}.yaml</span>
+                    </div>
+                    <textarea 
+                      className="form-input" 
+                      style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', height: '140px', resize: 'vertical' }}
+                      value={yamlDraft}
+                      onChange={e => setYamlDraft(e.target.value)}
+                    />
+                    <button 
+                      type="button"
+                      onClick={handleSaveDraftedSkill}
+                      className="btn-gradient"
+                      style={{ padding: '8px', background: 'linear-gradient(135deg, #0d9488, #0f766e)', boxShadow: '0 4px 14px rgba(13, 148, 136, 0.2)' }}
+                    >
+                      Compile & Register Skill
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
