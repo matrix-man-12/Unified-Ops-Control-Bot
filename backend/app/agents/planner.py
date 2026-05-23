@@ -6,6 +6,8 @@ from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from app.config import settings
 from app.agents.state import AgentState, ExecutionStep
+from app.database import get_portal
+from app.agents.api_compiler import compile_openapi_tools
 
 def get_llm(provider: str) -> Any:
     """Load the designated LLM provider dynamically based on config settings."""
@@ -73,14 +75,43 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
     matched_skill = find_matching_skill(user_query, skills)
     if matched_skill:
         logs.append(f"Determined Skill Match: '{matched_skill.get('name')}' (ID: {matched_skill.get('id')})")
+        
+        # Load active portal config and compile swagger tools to resolve routes at plan-time
+        portal = get_portal(portal_id)
+        compiled_tools = []
+        if portal and portal.get("swagger_doc"):
+            try:
+                compiled_tools = compile_openapi_tools(portal_id, portal["swagger_doc"])
+            except Exception as e:
+                logs.append(f"Warning: Swagger spec compilation failed: {e}")
+                
         plan_steps = []
         for step in matched_skill.get("steps", []):
+            action_type = step.get("action_type", "api_call")
+            tool_name = step.get("tool_name")
+            
+            # Default values from YAML step if they exist
+            path = step.get("path")
+            method = step.get("method")
+            param_mappings = step.get("param_mappings")
+            
+            # Resolve dynamically from Swagger tool compilation if missing
+            if action_type == "api_call" and tool_name:
+                matched_tool = next((t for t in compiled_tools if t.name == tool_name), None)
+                if matched_tool:
+                    path = path or matched_tool.metadata.get("path")
+                    method = method or matched_tool.metadata.get("method")
+                    param_mappings = param_mappings or matched_tool.metadata.get("param_mappings")
+            
             plan_steps.append({
                 "step": step.get("step"),
                 "id": step.get("id"),
                 "description": step.get("description", ""),
-                "action_type": step.get("action_type", "api_call"),
-                "tool_name": step.get("tool_name"),
+                "action_type": action_type,
+                "tool_name": tool_name,
+                "path": path,
+                "method": method,
+                "param_mappings": param_mappings,
                 "inputs": step.get("inputs"),
                 "requires_approval": step.get("requires_approval", False) or step.get("requires_confirmation", False),
                 "input_fields": step.get("input_fields"),

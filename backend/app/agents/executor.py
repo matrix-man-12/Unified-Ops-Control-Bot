@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Any, List, Optional
 from langchain_core.messages import AIMessage
 from app.agents.state import AgentState, ExecutionStep
@@ -8,7 +9,6 @@ from app.database import get_portal
 def parse_bulk_file(file_path: str) -> List[Dict[str, Any]]:
     """Parse bulk data files (CSV, JSON, XLSX) using local helpers."""
     import csv
-    import json
     from pathlib import Path
     
     path = Path(file_path)
@@ -229,9 +229,9 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
         # Execute actual HTTP Call
         res = make_http_call(
             portal_id=portal_id,
-            path=step.get("path", "/users"), # Map correct paths in database specs
+            path=step.get("path", "/users"),
             method=step.get("method", "post"),
-            param_mappings=[{"name": k, "in": "body"} for k in interpolated.keys()],
+            param_mappings=step.get("param_mappings") or [{"name": k, "in": "body"} for k in interpolated.keys()],
             kwargs=interpolated
         )
         

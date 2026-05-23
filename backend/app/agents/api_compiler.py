@@ -244,6 +244,7 @@ def compile_openapi_tools(portal_id: str, swagger_string: str) -> List[Structure
             tool.metadata = {
                 "path": path,
                 "method": method.lower(),
+                "param_mappings": param_mappings,
                 "is_mutation": is_mutation,
                 "requires_approval": is_mutation, # Safe default: approve all writes
                 "is_bulk": "bulk" in path or "bulk" in op_id

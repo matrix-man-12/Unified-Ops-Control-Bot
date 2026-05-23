@@ -19,6 +19,10 @@ def route_after_execution(state: AgentState) -> str:
     plan = state.get("plan", [])
     idx = state.get("current_step_index", 0)
     
+    # If the current step exists and has failed, terminate graph immediately to prevent infinite loops
+    if idx < len(plan) and plan[idx].get("status") == "failed":
+        return END
+        
     if idx >= len(plan):
         # All steps are finished
         return END

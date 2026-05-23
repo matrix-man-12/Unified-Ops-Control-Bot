@@ -212,6 +212,11 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 # Standard fresh incoming query
                 session_state["messages"].append(HumanMessage(content=user_msg))
                 
+                # Reset plan and index state for the new user query to force re-planning
+                session_state["plan"] = []
+                session_state["current_step_index"] = 0
+                session_state["interrupt_payload"] = None
+                
                 # Check for bulk media file mappings in websocket inputs
                 uploaded_file_path = data.get("file_path")
                 if uploaded_file_path:
