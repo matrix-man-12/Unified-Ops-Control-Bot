@@ -88,11 +88,6 @@ async def register_new_skill(
 def get_all_skills(portal_id: Optional[str] = None):
     return list_skills(portal_id)
 
-@app.delete("/api/skills/{skill_id}")
-def remove_skill(skill_id: str):
-    delete_skill(skill_id)
-    return {"success": True}
-
 class SkillGenerateInput(BaseModel):
     portal_id: str
     prompt: str
@@ -113,6 +108,11 @@ def generate_skill(payload: SkillGenerateInput):
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+@app.delete("/api/skills/{skill_id}")
+def remove_skill(skill_id: str):
+    delete_skill(skill_id)
+    return {"success": True}
 
 # --- REST File uploads pipeline ---
 @app.post("/api/upload")

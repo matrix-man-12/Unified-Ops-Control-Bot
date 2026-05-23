@@ -88,7 +88,7 @@ def get_portal(portal_id: str) -> Optional[Dict[str, Any]]:
 def list_portals() -> List[Dict[str, Any]]:
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name, base_url, headers, created_at FROM portals ORDER BY created_at DESC")
+    cursor.execute("SELECT id, name, base_url, headers, swagger_doc, created_at FROM portals ORDER BY created_at DESC")
     rows = cursor.fetchall()
     conn.close()
     results = []
