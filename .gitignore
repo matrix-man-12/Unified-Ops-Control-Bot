@@ -1,0 +1,33 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+venv/
+.env
+.env.*
+
+# Local SQLite databases & caching
+*.db
+*.sqlite
+*.sqlite3
+.langgraph/
+
+# Node / Frontend build files
+node_modules/
+dist/
+.vite-cache/
+
+# User uploads & compiled artifacts
+backend/uploads/
+backend/app/storage/
+backend/app/temp/
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
