@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portal Project Skills Guide - YAML Schemas</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header Navigation -->
+  <header class="doc-header">
+    <div class="container doc-header-nav">
+      <a href="index.html" class="logo-link">
+        <div class="logo-icon">⚡</div>
+        <span>Unified Portal Agent</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="getting_started.html">Getting Started</a></li>
+          <li class="active"><a href="skills_guide.html">Skills Guide</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Content Workspace -->
+  <div class="container main-wrapper">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="doc-sidebar">
+      <h4>Skills Reference</h4>
+      <ul>
+        <li><a href="#core-structure">1. Core Structure</a></li>
+        <li><a href="#action-types">2. Step Action Types</a></li>
+        <li style="margin-left: 12px;"><a href="#api-call">api_call</a></li>
+        <li style="margin-left: 12px;"><a href="#collect-input">collect_input</a></li>
+        <li style="margin-left: 12px;"><a href="#manual-instruction">manual_instruction</a></li>
+        <li><a href="#variable-binding">3. Variable Binding</a></li>
+        <li><a href="#conditional-jumps">4. Conditional Jumps</a></li>
+        <li><a href="#security-safety">5. Safety Policies</a></li>
+        <li><a href="#async-polling">6. Async Polling Loops</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Article content -->
+    <main class="doc-content">
+      <h1>Portal Project Skills Guide</h1>
+      <p>This guide describes how to define custom <strong>Project Skills</strong> using declarative YAML files. Project Skills act as "runbooks" or "workflows" that teach your unified agent about UI flows, dependency ordering, and validation rules of your portals.</p>
+      
+      <hr>
+
+      <section id="core-structure">
+        <h2>1. Core Structure of a Skill File</h2>
+        <p>A Project Skill is defined using a standard YAML file with the following root schema fields:</p>
+        
+        <pre><code><span class="syntax-key">id</span>: <span class="syntax-string">"unique_identifier"</span>        <span class="syntax-comment"># String ID (snake_case)</span>
+<span class="syntax-key">name</span>: <span class="syntax-string">"Human Readable Name"</span>  <span class="syntax-comment"># Displayed in UI</span>
+<span class="syntax-key">description</span>: <span class="syntax-string">"Description"</span>   <span class="syntax-comment"># Helps the LLM Planner understand when to run this</span>
+<span class="syntax-key">version</span>: <span class="syntax-string">"1.0.0"</span>             <span class="syntax-comment"># Semantic versioning</span>
+
+<span class="syntax-comment"># Optional safety assertions</span>
+<span class="syntax-key">safety_policy</span>:
+  <span class="syntax-key">require_confirmation_for_mutations</span>: <span class="syntax-value">true</span>
+
+<span class="syntax-comment"># The list of steps executing sequentially</span>
+<span class="syntax-key">steps</span>:
+  - <span class="syntax-key">step</span>: 1
+    <span class="syntax-key">id</span>: <span class="syntax-string">"step_one_id"</span>
+    <span class="syntax-key">description</span>: <span class="syntax-string">"What this step does"</span>
+    <span class="syntax-key">action_type</span>: <span class="syntax-string">"api_call"</span>  <span class="syntax-comment"># Choices: api_call, collect_input, manual_instruction</span>
+    <span class="syntax-key">tool_name</span>: <span class="syntax-string">"tool_name_from_swagger"</span>
+    <span class="syntax-key">inputs</span>:
+      <span class="syntax-key">param_key</span>: <span class="syntax-string">"{{variable_name}}"</span></code></pre>
+      </section>
+
+      <section id="action-types">
+        <h2>2. Step Action Types</h2>
+        <p>Our LangGraph executor supports three main action types:</p>
+
+        <h3 id="api-call">A. <code>api_call</code> (Automated API Invocations)</h3>
+        <p>Invokes a REST operation dynamically compiled from your portal's Swagger OpenAPI specification.</p>
+        <pre><code>- <span class="syntax-key">step</span>: 2
+  <span class="syntax-key">id</span>: <span class="syntax-string">"create_user"</span>
+  <span class="syntax-key">action_type</span>: <span class="syntax-string">"api_call"</span>
+  <span class="syntax-key">tool_name</span>: <span class="syntax-string">"post_api_v1_users"</span>
+  <span class="syntax-key">inputs</span>:
+    <span class="syntax-key">email</span>: <span class="syntax-string">"{{user_email}}"</span>
+    <span class="syntax-key">name</span>: <span class="syntax-string">"{{user_name}}"</span>
+  <span class="syntax-key">requires_approval</span>: <span class="syntax-value">true</span>  <span class="syntax-comment"># Triggers a Human-in-the-Loop Confirmation Card in the UI!</span></code></pre>
+
+        <h3 id="collect-input">B. <code>collect_input</code> (Dynamic UI Form Collection)</h3>
+        <p>Instructs the agent to pause execution and request specific inputs from the user. The React frontend dynamically renders a beautiful form using the defined inputs.</p>
+        <pre><code>- <span class="syntax-key">step</span>: 1
+  <span class="syntax-key">id</span>: <span class="syntax-string">"get_params"</span>
+  <span class="syntax-key">action_type</span>: <span class="syntax-string">"collect_input"</span>
+  <span class="syntax-key">input_fields</span>:
+    - <span class="syntax-key">name</span>: <span class="syntax-string">"user_email"</span>
+      <span class="syntax-key">type</span>: <span class="syntax-string">"string"</span>
+      <span class="syntax-key">required</span>: <span class="syntax-value">true</span>
+      <span class="syntax-key">description</span>: <span class="syntax-string">"Corporate email address"</span>
+    - <span class="syntax-key">name</span>: <span class="syntax-string">"role"</span>
+      <span class="syntax-key">type</span>: <span class="syntax-string">"string"</span>
+      <span class="syntax-key">required</span>: <span class="syntax-value">true</span>
+      <span class="syntax-key">options</span>: [<span class="syntax-string">"Admin"</span>, <span class="syntax-string">"Developer"</span>, <span class="syntax-string">"Guest"</span>]
+      <span class="syntax-key">description</span>: <span class="syntax-string">"Permission level inside portal"</span></code></pre>
+
+        <h3 id="manual-instruction">C. <code>manual_instruction</code> (Operator Steps)</h3>
+        <p>For processes that cannot be automated via API (e.g. manual hardware synchronization, verifying legacy databases). Renders as a checkmark list step requiring manual confirmation.</p>
+        <pre><code>- <span class="syntax-key">step</span>: 3
+  <span class="syntax-key">id</span>: <span class="syntax-string">"hardware_check"</span>
+  <span class="syntax-key">action_type</span>: <span class="syntax-string">"manual_instruction"</span>
+  <span class="syntax-key">message</span>: <span class="syntax-string">"Please open the legacy terminal and verify that the DB sync light is green before approving user activation."</span></code></pre>
+      </section>
+
+      <section id="variable-binding">
+        <h2>3. Dynamic Variable Binding &amp; Interpolation</h2>
+        <p>You can share data between steps using double-curly braces <code>{{variable_name}}</code>:</p>
+        <ul>
+          <li>Inputs collected in a <code>collect_input</code> step (e.g., <code>user_email</code>) are stored in the active graph memory.</li>
+          <li>In subsequent <code>api_call</code> steps, you can pass these variables: <code>email: "{{user_email}}"</code>.</li>
+          <li>If an API call returns a response (like <code>{ "id": 1234 }</code>), the response keys are automatically accessible in later steps as <code>{{step_id.response_key}}</code> (e.g., <code>{{create_user.id}}</code>).</li>
+        </ul>
+      </section>
+
+      <section id="conditional-jumps">
+        <h2>4. Conditional Jumps and Error Policies</h2>
+        <p>You can specify policies for when a step fails to handle error cases gracefully:</p>
+        <pre><code>- <span class="syntax-key">step</span>: 1
+  <span class="syntax-key">id</span>: <span class="syntax-string">"verify_tenant"</span>
+  <span class="syntax-key">action_type</span>: <span class="syntax-string">"api_call"</span>
+  <span class="syntax-key">tool_name</span>: <span class="syntax-string">"get_tenant"</span>
+  <span class="syntax-key">inputs</span>:
+    <span class="syntax-key">tenant_id</span>: <span class="syntax-string">"{{tenant_id}}"</span>
+  <span class="syntax-key">on_failure</span>:
+    <span class="syntax-key">action</span>: <span class="syntax-string">"interrupt"</span> <span class="syntax-comment"># Choices: interrupt, stop, jump_to</span>
+    <span class="syntax-key">message</span>: <span class="syntax-string">"Tenant {{tenant_id}} was not found. Do you wish to create it first?"</span></code></pre>
+      </section>
+
+      <section id="security-safety">
+        <h2>5. Security &amp; Safety Best Practices</h2>
+        <ol>
+          <li><strong>Avoid Hardcoding Secrets:</strong> Never place API keys, passwords, or session cookies inside the YAML skill. Let the backend headers dynamically inject them from the local <code>.env</code> configurations.</li>
+          <li><strong>Mutations Approval:</strong> Set <code>requires_approval: true</code> on any step that modifies state (POST, PUT, DELETE) to protect production portals from errant executions.</li>
+        </ol>
+      </section>
+
+      <section id="async-polling">
+        <h2>6. Async Status Verification &amp; Repeated Polling Loops</h2>
+        <p>For long-running async background operations (such as compiling video uploads, booting database instances, or running heavy report generations), you can define a dynamic polling configuration directly inside any <code>api_call</code> step!</p>
+        <p>The executor will execute the initial API call, flat-map the response (e.g. capturing dynamic IDs like <code>upload_id</code> or <code>job_id</code>), and automatically run an async polling loop calling status checks completely generically until the job completes.</p>
+
+        <h3>Polling YAML Step Specification:</h3>
+        <pre><code>- <span class="syntax-key">step</span>: 2
+  <span class="syntax-key">id</span>: <span class="syntax-string">"upload_report"</span>
+  <span class="syntax-key">action_type</span>: <span class="syntax-string">"api_call"</span>
+  <span class="syntax-key">tool_name</span>: <span class="syntax-string">"post_report"</span>
+  <span class="syntax-key">inputs</span>:
+    <span class="syntax-key">name</span>: <span class="syntax-string">"quarterly_summary"</span>
+  <span class="syntax-key">polling_config</span>:
+    <span class="syntax-key">interval_seconds</span>: 3               <span class="syntax-comment"># Sleep duration between checks</span>
+    <span class="syntax-key">max_attempts</span>: 10                  <span class="syntax-comment"># Max polling cycles before timeout</span>
+    <span class="syntax-key">status_check_endpoint</span>: <span class="syntax-string">"/reports/{id}/status"</span>  <span class="syntax-comment"># Check path (supports path parameters interpolation!)</span>
+    <span class="syntax-key">status_field</span>: <span class="syntax-string">"status"</span>            <span class="syntax-comment"># Field in the response JSON to verify</span>
+    <span class="syntax-key">success_value</span>: <span class="syntax-string">"ready"</span>            <span class="syntax-comment"># Expected value representing success</span></code></pre>
+
+        <div class="alert alert-info">
+          During run, the console diagnostic shell will stream live updates:
+          <ul>
+            <li><code>Attempt 1/10: Checking status on '/reports/8302/status'...</code></li>
+            <li><code>Status response: 'processing'</code></li>
+            <li><code>Attempt 2/10: Checking status on '/reports/8302/status'...</code></li>
+            <li><code>Status response: 'ready'</code></li>
+            <li><code>Status verified successfully! Processing completed.</code></li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="doc-footer">
+    <div class="container">
+      <p>&copy; 2026 Unified Portal Control Agent. All rights reserved.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

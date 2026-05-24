@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Getting Started - Operational Agent Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header Navigation -->
+  <header class="doc-header">
+    <div class="container doc-header-nav">
+      <a href="index.html" class="logo-link">
+        <div class="logo-icon">⚡</div>
+        <span>Unified Portal Agent</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li class="active"><a href="getting_started.html">Getting Started</a></li>
+          <li><a href="skills_guide.html">Skills Guide</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Content Workspace -->
+  <div class="container main-wrapper">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="doc-sidebar">
+      <h4>In This Guide</h4>
+      <ul>
+        <li><a href="#prerequisites">1. Prerequisites</a></li>
+        <li><a href="#boot-backend">2. Booting Backend</a></li>
+        <li><a href="#boot-frontend">3. Booting Frontend</a></li>
+        <li><a href="#verification">4. Verification Walkthrough</a></li>
+        <li style="margin-left: 12px;"><a href="#step-a">A: Connect Portal</a></li>
+        <li style="margin-left: 12px;"><a href="#step-b">B: Teach Skill</a></li>
+        <li style="margin-left: 12px;"><a href="#step-c">C: HITL Execution</a></li>
+        <li><a href="#loops">5. Batch & Loop Runs</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Article content -->
+    <main class="doc-content">
+      <h1>Getting Started: Operational Agent Dashboard</h1>
+      <p>This guide describes how to run and test the Unified Portal Control Agent system locally. Follow these steps to spin up the FastAPI servers, compile the React workspace, and execute your first operational workflow with manual approvals.</p>
+      
+      <hr>
+
+      <section id="prerequisites">
+        <h2>1. Prerequisites</h2>
+        <p>Ensure you have the following installed locally on your Windows environment:</p>
+        <ul>
+          <li><strong>Python 3.10+</strong> (tested on Python 3.11)</li>
+          <li><strong>Node.js 18+</strong> &amp; <strong>npm</strong></li>
+        </ul>
+      </section>
+
+      <section id="boot-backend">
+        <h2>2. Booting the Backend Subsystems</h2>
+        <p>We have integrated an isolated Python virtual environment (<code>venv</code>) and a concurrent runner <code>run.py</code> to make execution trivial.</p>
+        
+        <ol>
+          <li>Open a terminal and navigate to the <code>/backend</code> folder:
+            <pre><code><span class="syntax-keyword">cd</span> backend</code></pre>
+          </li>
+          <li>Activate the virtual environment:
+            <pre><code><span class="syntax-comment"># PowerShell</span>
+.\venv\Scripts\Activate.ps1</code></pre>
+          </li>
+          <li>Boot both the <strong>Mock Portal Server</strong> (port 8881/8081) and the <strong>Main Agent WebSocket Server</strong> (port 8000) concurrently:
+            <pre><code><span class="syntax-keyword">python</span> run.py</code></pre>
+          </li>
+        </ol>
+
+        <div class="alert alert-info">
+          <strong>System Note:</strong>
+          <ul>
+            <li>The Mock Portal serves a local CRUD API mimicking your corporate portals at <code>http://127.0.0.1:8081</code>.</li>
+            <li>The main orchestrator serves WebSocket and REST bridges at <code>http://127.0.0.1:8000</code>.</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="boot-frontend">
+        <h2>3. Booting the React Client Dashboard</h2>
+        <ol>
+          <li>Open a new terminal window and navigate to the frontend workspace:
+            <pre><code><span class="syntax-keyword">cd</span> frontend</code></pre>
+          </li>
+          <li>Install local npm dependencies (React, ReactDOM, Lucide React, Vite):
+            <pre><code><span class="syntax-keyword">npm</span> install</code></pre>
+          </li>
+          <li>Boot the Vite hot-reloading development server:
+            <pre><code><span class="syntax-keyword">npm</span> run dev</code></pre>
+          </li>
+          <li>Open your browser and navigate to the dashboard:
+            <p style="margin-top: 8px;"><strong><a href="http://localhost:3000" target="_blank" style="color: var(--color-gold); text-decoration: underline;">http://localhost:3000</a></strong></p>
+          </li>
+        </ol>
+      </section>
+
+      <section id="verification">
+        <h2>4. Step-by-Step Integration Verification Walkthrough</h2>
+        <p>Once both applications are running, execute the following workflow to test the dynamic compilers, compilers, forms, and Human-in-the-Loop gates:</p>
+        
+        <h3 id="step-a">Step A: Configure the Portal Connection</h3>
+        <ol>
+          <li>In the left panel of the browser dashboard, click <strong>"Add Portal"</strong>.</li>
+          <li>Fill out the form with the following details:
+            <ul>
+              <li><strong>Portal Nickname ID:</strong> <code>mock-ops-portal</code></li>
+              <li><strong>Display Title:</strong> <code>Corporate Admin Portal</code></li>
+              <li><strong>Base Target API URL:</strong> <code>http://127.0.0.1:8081</code></li>
+              <li><strong>Authentication Headers:</strong>
+                <ul>
+                  <li>Key: <code>Authorization</code></li>
+                  <li>Value: <code>Bearer mock-secret-bearer-key</code></li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+          <li>Retrieve the raw OpenAPI Swagger document from the running Mock Portal. In a new tab, open:
+            <br><code>http://127.0.0.1:8081/openapi.json</code>
+          </li>
+          <li>Copy the entire raw JSON text and paste it into the <strong>OpenAPI Swagger Spec</strong> textarea.</li>
+          <li>Click <strong>"Register"</strong>.</li>
+        </ol>
+
+        <h3 id="step-b">Step B: Teach the Portal a Skill Workflow</h3>
+        <ol>
+          <li>Select the newly registered <code>Corporate Admin Portal</code> in your sidebar list.</li>
+          <li>Under "Uploaded Portal Skills", click <strong>"Teach Portal a Skill (.yaml)"</strong>.</li>
+          <li>Save this YAML text locally as <code>create_user.yaml</code> and upload it:
+            <pre><code><span class="syntax-key">id</span>: <span class="syntax-string">"mock_create_user"</span>
+<span class="syntax-key">name</span>: <span class="syntax-string">"Corporate User Enlistment"</span>
+<span class="syntax-key">description</span>: <span class="syntax-string">"Guideline steps to create a new user profile on the Admin dashboard."</span>
+<span class="syntax-key">version</span>: <span class="syntax-string">"1.0.0"</span>
+<span class="syntax-key">steps</span>:
+  - <span class="syntax-key">step</span>: 1
+    <span class="syntax-key">id</span>: gather_inputs
+    <span class="syntax-key">action_type</span>: <span class="syntax-string">"collect_input"</span>
+    <span class="syntax-key">input_fields</span>:
+      - <span class="syntax-key">name</span>: <span class="syntax-string">"email"</span>
+        <span class="syntax-key">type</span>: <span class="syntax-string">"string"</span>
+        <span class="syntax-key">required</span>: true
+        <span class="syntax-key">description</span>: <span class="syntax-string">"User corporate email"</span>
+      - <span class="syntax-key">name</span>: <span class="syntax-string">"username"</span>
+        <span class="syntax-key">type</span>: <span class="syntax-string">"string"</span>
+        <span class="syntax-key">required</span>: true
+        <span class="syntax-key">description</span>: <span class="syntax-string">"Unique account username"</span>
+      - <span class="syntax-key">name</span>: <span class="syntax-string">"role"</span>
+        <span class="syntax-key">type</span>: <span class="syntax-string">"string"</span>
+        <span class="syntax-key">required</span>: true
+        <span class="syntax-key">options</span>: [<span class="syntax-string">"Administrator"</span>, <span class="syntax-string">"Developer"</span>, <span class="syntax-string">"Guest"</span>]
+        <span class="syntax-key">description</span>: <span class="syntax-string">"Assigned access role"</span>
+  - <span class="syntax-key">step</span>: 2
+    <span class="syntax-key">id</span>: execute_creation
+    <span class="syntax-key">action_type</span>: <span class="syntax-string">"api_call"</span>
+    <span class="syntax-key">tool_name</span>: <span class="syntax-string">"create_user"</span>
+    <span class="syntax-key">inputs</span>:
+      <span class="syntax-key">email</span>: <span class="syntax-string">"{{email}}"</span>
+      <span class="syntax-key">username</span>: <span class="syntax-string">"{{username}}"</span>
+      <span class="syntax-key">role</span>: <span class="syntax-string">"{{role}}"</span>
+      <span class="syntax-key">team_name</span>: <span class="syntax-string">"Engineering"</span>
+    <span class="syntax-key">requires_approval</span>: true</code></pre>
+          </li>
+          <li>Verify that the skill registers successfully and displays in the list!</li>
+        </ol>
+
+        <h3 id="step-c">Step C: Execute Chat Operation &amp; HITL Approvals</h3>
+        <ol>
+          <li>In the chat input, type: <strong><code>Execute user enlistment workflow</code></strong> and hit Send.</li>
+          <li>The Planner node will dynamically match your request to the <code>mock_create_user</code> skill, compile a 2-step plan, and display it in the right checklist tracker.</li>
+          <li>The Executor node checks Step 1 (<code>gather_inputs</code>). Since details are not yet present in variables, it halts execution and <strong>opens a sleek form card</strong> directly in the chat panel!</li>
+          <li>Fill in the fields (e.g. <code>operator-1@company.com</code>, <code>ops_lead</code>, select <code>Administrator</code>) and click <strong>"Submit Details"</strong>.</li>
+          <li>The graph resumes, saves variables, and starts Step 2 (<code>execute_creation</code>).</li>
+          <li>Because <code>requires_approval</code> is set to <code>true</code>, execution pauses again. <strong>A glowing Security Authorization Card slides into view</strong>, detailing target URL, authentication headers validation, and JSON payload inputs mapping.</li>
+          <li>Click <strong>"Authorize &amp; Execute"</strong>.</li>
+          <li>The graph resumes, triggers the live REST request, and completes! The steppers go <strong>green check</strong> and the agent posts the final successful completion response in chat!</li>
+        </ol>
+      </section>
+
+      <section id="loops">
+        <h2>5. Advanced: Batch &amp; Loop Operations</h2>
+        <p>Our platform natively supports dynamic bulk iteration logic (e.g. executing workflows multiple times in parallel/sequential runs).</p>
+        
+        <div class="alert alert-success">
+          <strong>Interactive Overrides Allowed:</strong>
+          Our verified LLM Planner is dynamically integrated to process conversational memory and loops without hardcoding any portal structures!
+        </div>
+
+        <ol>
+          <li>In the chat prompt, type: <strong><code>Create 5 users</code></strong> or <strong><code>Batch register 3 users: operator-1@company.com and operator-2@company.com</code></strong>.</li>
+          <li>The <strong>Dynamic LLM Planner</strong> parses your intent, extracts quantities (e.g., 5), pre-populates inline parameters (like emails), and builds a loop-configured stepper checklist marked with <code>🔄 LOOP MODE (5 Items)</code>.</li>
+          <li><strong>Unified Loop Form:</strong> Step 1 (<code>gather_inputs</code>) halts and displays a paginated card slider directly inside the chat workspace letting you enter details for "Item 1 of 5", "Item 2 of 5", etc. completely on a single screen!</li>
+          <li><strong>One-Click Batch Authorization:</strong> Step 2 (<code>execute_creation</code>) halts and displays a unified authorization grid listing the target parameters of all 5 iterations. Review the batch variables and click <strong>"Authorize Batch Run"</strong> to approve all 5 API mutations in a single operation!</li>
+          <li><strong>Real-time Metrics &amp; Fault Tolerance:</strong>
+            <ul>
+              <li>During execution, a dynamic percentage bar shows progress (e.g. <code>Processing Loop Index... 3 of 5 (60%)</code>) in real time.</li>
+              <li>If any specific user creation API fails (e.g. user 3 is duplicates), the executor automatically registers the failure, continues the loop to create subsequent users (4 and 5), and displays a detailed success/error breakdown tally badge upon step completion!</li>
+            </ul>
+          </li>
+        </ol>
+      </section>
+    </main>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="doc-footer">
+    <div class="container">
+      <p>&copy; 2026 Unified Portal Control Agent. All rights reserved.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

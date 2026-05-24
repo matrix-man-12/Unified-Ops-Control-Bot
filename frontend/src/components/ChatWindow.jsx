@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bot, User, Terminal, ListTodo, AlertTriangle, CheckCircle, HelpCircle, Send, Paperclip, Check, UploadCloud } from 'lucide-react';
 import DynamicForm from './DynamicForm';
 import ConfirmationCard from './ConfirmationCard';
+import PlanVerificationCard from './PlanVerificationCard';
+
 
 export default function ChatWindow({ 
   messages, 
@@ -379,6 +381,19 @@ export default function ChatWindow({
             {/* Inline Dynamic Form overlay tray (above composing box) */}
             {interruptPayload && (
               <div style={{ padding: '16px 24px', background: 'var(--color-bg-light)', borderTop: '1px solid var(--border-neon)', boxShadow: '0 -10px 15px -3px rgba(0, 0, 0, 0.04)' }} className="animate-fade-in">
+                {interruptPayload.type === 'plan_verification' && (
+                  <PlanVerificationCard 
+                    title={interruptPayload.title}
+                    steps={interruptPayload.steps}
+                    executionMode={interruptPayload.execution_mode}
+                    loopCount={interruptPayload.loop_count}
+                    fields={interruptPayload.fields}
+                    parameterList={interruptPayload.parameter_list}
+                    onApprove={(formData, parameterList) => handleFormSubmit(formData, parameterList, true)}
+                    onCancel={onCancelInterrupt}
+                  />
+                )}
+                
                 {interruptPayload.type === 'form_request' && (
                   <DynamicForm 
                     stepId={interruptPayload.step_id}

@@ -4,8 +4,12 @@ from app.agents.planner import plan_node
 from app.agents.executor import execute_node
 
 def route_after_planning(state: AgentState) -> str:
-    """Route from the planner directly to the executor to begin step run."""
+    """Route from the planner to the executor, or end if interrupted for verification."""
+    interrupt = state.get("interrupt_payload")
+    if interrupt is not None:
+        return END
     return "execute"
+
 
 def route_after_execution(state: AgentState) -> str:
     """
@@ -57,7 +61,8 @@ workflow.add_conditional_edges(
     "plan",
     route_after_planning,
     {
-        "execute": "execute"
+        "execute": "execute",
+        "__end__": END
     }
 )
 

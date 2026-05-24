@@ -221,18 +221,20 @@ export default function App() {
     socket.send(JSON.stringify(payload));
   };
 
-  const handleFormSubmit = (formData, parameterList) => {
+  const handleFormSubmit = (formData, parameterList, isPlanApproval = false) => {
     const payload = {
       type: 'form_submit',
       portal_id: activePortalId,
       session_id: session_id,
       variables: formData || {},
       parameter_list: parameterList,
+      is_plan_approval: isPlanApproval,
       model_provider: modelProvider
     };
     socket.send(JSON.stringify(payload));
     setInterruptPayload(null);
   };
+
 
 
   const handleHitlResponse = (approved) => {

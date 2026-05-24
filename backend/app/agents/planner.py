@@ -57,18 +57,21 @@ def yaml_safe_load(content: str) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
-def detect_loop_count(query: str) -> int:
+def detect_loop_count(query: str, history: str = "") -> int:
     """Detect if the user is asking to execute actions in a loop/batch."""
-    # Look for number patterns followed by common terms (users, teams, items, portals, roles)
-    match = re.search(r'\b(?:create|add|delete|register|make|run|update|fetch|get)\s+(\d+)\b', query, re.IGNORECASE)
-    if match:
-        return int(match.group(1))
-    
-    # Check general number followed by words
-    match2 = re.search(r'\b(\d+)\s+(?:users|teams|items|portals|roles|departments|files|channels|messages|videos|skills|requests|calls)\b', query, re.IGNORECASE)
-    if match2:
-        return int(match2.group(1))
+    for text in [query, history]:
+        if not text:
+            continue
+        # Look for number patterns followed by common terms (users, teams, items, portals, roles)
+        match = re.search(r'\b(?:create|add|delete|register|make|run|update|fetch|get)\s+(\d+)\b', text, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
         
+        # Check general number followed by words
+        match2 = re.search(r'\b(\d+)\s+(?:users|teams|items|portals|roles|departments|files|channels|messages|videos|skills|requests|calls)\b', text, re.IGNORECASE)
+        if match2:
+            return int(match2.group(1))
+            
     return 1
 
 def plan_node(state: AgentState) -> Dict[str, Any]:
@@ -83,9 +86,36 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
     provider = state.get("model_provider", settings.LLM_PROVIDER)
     
     logs = list(state.get("status_logs", []))
+    
+    # Check if this node is returning from an approved plan verification
+    variables = dict(state.get("variables", {}))
+    if variables.get("_approved_plan"):
+        logs.append("Execution plan approved by operator. Transitioning directly to execution node.")
+        
+        # Pull parameters returned from the verification screen
+        plan = list(state.get("plan", []))
+        parameter_list = variables.get("_parameter_list")
+        if parameter_list:
+            for step in plan:
+                step["parameter_list"] = parameter_list
+                
+        return {
+            "plan": plan,
+            "current_step_index": 0,
+            "status_logs": logs,
+            "interrupt_payload": None
+        }
+        
     logs.append(f"Analyzing operational request: '{user_query}'...")
     
-    loop_count = detect_loop_count(user_query)
+    # Format preceding conversation history for dynamic context
+    history_lines = []
+    for msg in messages[:-1]:
+        role = "User" if isinstance(msg, HumanMessage) or getattr(msg, "type", "") == "human" else "Agent"
+        history_lines.append(f"{role}: {msg.content}")
+    history_context = "\n".join(history_lines) if history_lines else "No preceding conversation history."
+    
+    loop_count = detect_loop_count(user_query, history_context)
     is_loop = loop_count > 1
     
     # 1. Compile registered Project Skills context dynamically for the LLM
@@ -142,6 +172,9 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
     prompt = f"""
     You are an expert systems operator, compiler, and planner. The user wants to achieve: "{user_query}"
     
+    Here is the preceding conversation history for context:
+    {history_context}
+    
     Here is the active Portal API operations context (raw tools):
     {swagger_context}
     
@@ -172,10 +205,10 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
     - tool_name: target operation name (e.g., "create_user")
     - path: REST URL path (e.g., "/users")
     - method: HTTP method in lowercase (e.g., "post")
-    - param_mappings: list of parameter mapping dicts (e.g. [{"name": "email", "in": "body"}])
+    - param_mappings: list of parameter mapping dicts (e.g. [ {{"name": "email", "in": "body"}} ])
     - inputs: input key-value binds
     - requires_approval: true (if it's a POST, PUT, DELETE write operation)
-    - input_fields: required only for collect_input step. A list of dicts describing required parameters (e.g. [{"name": "email", "type": "string", "required": true, "description": "email"}])
+    - input_fields: required only for collect_input step. A list of dicts describing required parameters (e.g. [ {{"name": "email", "type": "string", "required": true, "description": "email"}} ])
     
     Response format must be a raw JSON array block inside code fences:
     ```json
@@ -206,17 +239,38 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
                     # Safe default: approve all writes
                     m = s.get("method", "get").lower()
                     s["requires_approval"] = m in ["post", "put", "delete"]
+                    
+            # Scan plan steps to aggregate all required input collection fields
+            required_fields = []
+            seen_fields = set()
+            for s in plan_steps:
+                if s.get("action_type") == "collect_input" and s.get("input_fields"):
+                    for f in s.get("input_fields"):
+                        if f.get("name") not in seen_fields:
+                            required_fields.append(f)
+                            seen_fields.add(f.get("name"))
             
-            logs.append(f"Successfully compiled plan with {len(plan_steps)} sequential actions using LLM planner.")
+            logs.append(f"Successfully compiled proposed plan with {len(plan_steps)} steps. Awaiting operator verification upfront.")
+            
             return {
                 "plan": plan_steps,
                 "current_step_index": 0,
+                "interrupt_payload": {
+                    "type": "plan_verification",
+                    "step_id": "plan_approve",
+                    "title": f"Verify Proposed Operations Runbook: '{user_query}'",
+                    "steps": plan_steps,
+                    "execution_mode": "loop" if is_loop else "single",
+                    "loop_count": loop_count,
+                    "fields": required_fields,
+                    "parameter_list": initial_params if is_loop else []
+                },
                 "status_logs": logs
             }
         else:
             raise ValueError("LLM response did not contain a valid JSON plan array.")
     except Exception as exc:
-        logs.append(f"LLM planner compilation failed: {exc}. Creating fallback single action step.")
+        logs.append(f"LLM planner compilation failed: {exc}. Creating fallback manual review step.")
         # Fallback placeholder single action
         fallback_step = {
             "step": 1,
@@ -234,7 +288,18 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
         return {
             "plan": [fallback_step],
             "current_step_index": 0,
+            "interrupt_payload": {
+                "type": "plan_verification",
+                "step_id": "plan_approve",
+                "title": "Fallback Review Checklist Required",
+                "steps": [fallback_step],
+                "execution_mode": "single",
+                "loop_count": 1,
+                "fields": [],
+                "parameter_list": []
+            },
             "status_logs": logs
         }
+
 
 

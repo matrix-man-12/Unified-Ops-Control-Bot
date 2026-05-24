@@ -203,7 +203,8 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
         requires_approval = step.get("requires_approval", False)
         
         # Determine approval gating
-        if requires_approval and not has_approval:
+        has_plan_approval = variables.get("_approved_plan", False)
+        if requires_approval and not has_approval and not has_plan_approval:
             logs.append(f"Execution halted. Action authorization required by systems operator.")
             
             if execution_mode == "loop":

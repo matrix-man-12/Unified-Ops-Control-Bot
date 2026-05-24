@@ -268,16 +268,24 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 form_fields = data.get("variables", {})
                 session_state["variables"].update(form_fields)
                 
+                # Check for upfront plan verification approval
+                is_plan_approval = data.get("is_plan_approval", False)
+                if is_plan_approval:
+                    session_state["variables"]["_approved_plan"] = True
+                    session_state["status_logs"].append("Execution plan and parameters approved by systems operator.")
+                
                 # Dynamic loop parameters list extraction
                 parameter_list = data.get("parameter_list")
                 if parameter_list:
-                    idx = session_state.get("current_step_index", 0)
+                    session_state["variables"]["_parameter_list"] = parameter_list
+                    # Pre-populate all steps in the plan
                     plan = session_state.get("plan", [])
-                    if idx < len(plan):
-                        plan[idx]["parameter_list"] = parameter_list
+                    for step in plan:
+                        step["parameter_list"] = parameter_list
                         
                 session_state["interrupt_payload"] = None
-                session_state["status_logs"].append("Resuming execution with provided input parameters.")
+                session_state["status_logs"].append("Resuming execution runbook sequence.")
+
 
                 
             elif cmd_type == "hitl_response":
