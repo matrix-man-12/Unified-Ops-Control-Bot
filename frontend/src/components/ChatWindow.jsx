@@ -4,6 +4,19 @@ import DynamicForm from './DynamicForm';
 import ConfirmationCard from './ConfirmationCard';
 import PlanVerificationCard from './PlanVerificationCard';
 
+const LOADING_PHRASES = [
+  "Waking up the hamsters in the server rack...",
+  "Consulting the digital oracle...",
+  "Brewing a fresh pot of cognitive espresso...",
+  "Stretching my neural networks...",
+  "Untangling some extremely messy cables...",
+  "Polishing the database mirrors...",
+  "Teaching the API endpoints how to dance...",
+  "Chasing down some runaway server packets...",
+  "Charging the lasers... just in case...",
+  "Converting caffeine into code..."
+];
+
 const parseLogDetails = (log) => {
   const lower = log.toLowerCase();
   let prefix = "⚙️ [SYSTEM]";
@@ -51,6 +64,25 @@ export default function ChatWindow({
 }) {
   const [activeTab, setActiveTab] = useState('chat'); // chat, plan, terminal
   const [chatInput, setChatInput] = useState('');
+  const [loadingPhrase, setLoadingPhrase] = useState(LOADING_PHRASES[0]);
+
+  // Determine if the agent is actively thinking/processing
+  const isAgentThinking = messages.length > 0 && messages[messages.length - 1].sender === 'user';
+
+  // Rotate loading phrases every 2.5 seconds when active
+  useEffect(() => {
+    if (!isAgentThinking) return;
+
+    const interval = setInterval(() => {
+      setLoadingPhrase((current) => {
+        const remaining = LOADING_PHRASES.filter(p => p !== current);
+        const randomIdx = Math.floor(Math.random() * remaining.length);
+        return remaining[randomIdx];
+      });
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [isAgentThinking]);
   
   // File upload state
   const [uploadState, setUploadState] = useState('idle'); // idle, uploading, success, error
@@ -618,6 +650,59 @@ export default function ChatWindow({
                                   </div>
                                 );
                               })}
+                            </div>
+                          )}
+
+                          {/* Live Streaming Loader Bubble */}
+                          {isAgentThinking && (
+                            <div 
+                              className="animate-fade-in"
+                              style={{ 
+                                display: 'flex', 
+                                gap: '10px', 
+                                alignSelf: 'flex-start',
+                                maxWidth: '75%',
+                                background: 'rgba(168, 95, 26, 0.05)',
+                                border: '1px solid rgba(168, 95, 26, 0.15)',
+                                padding: '10px 14px',
+                                borderRadius: '0 12px 12px 12px',
+                                marginLeft: '46px',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.01)',
+                                marginTop: '4px',
+                                marginBottom: '4px',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                justifyContent: 'center', 
+                                flexShrink: 0,
+                                width: '20px',
+                                height: '20px',
+                                borderRadius: '5px',
+                                background: 'rgba(168, 95, 26, 0.1)',
+                                animation: 'spin 4s linear infinite',
+                                marginTop: '1px'
+                              }}>
+                                <Bot size={13} style={{ color: 'var(--color-primary)' }} />
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ 
+                                  fontSize: '12.5px', 
+                                  color: 'var(--text-secondary)', 
+                                  fontWeight: '600',
+                                  fontStyle: 'italic'
+                                }}>
+                                  {loadingPhrase}
+                                </span>
+                                {/* Animated Jumping Dots */}
+                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both' }} />
+                                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.2s' }} />
+                                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.4s' }} />
+                                </div>
+                              </div>
                             </div>
                           )}
                         </>
