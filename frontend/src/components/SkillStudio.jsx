@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Sparkles, Save, X, Code, Eye, FileCode, CheckCircle, AlertTriangle, Play, HelpCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Sparkles, Save, X, Code, Eye, FileCode, CheckCircle, AlertTriangle, Play, HelpCircle, Paperclip } from 'lucide-react';
 
 export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess }) {
   const [yamlContent, setYamlContent] = useState('');
@@ -7,6 +7,53 @@ export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess })
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationStatus, setValidationStatus] = useState({ valid: true, message: 'Ready' });
   const [skillId, setSkillId] = useState('');
+  
+  // Custom Modal state
+  const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info' });
+  const showCustomModal = (title, message, type = 'info') => {
+    setModal({ show: true, title, message, type });
+  };
+  
+  // File upload state variables
+  const [uploadState, setUploadState] = useState('idle'); 
+  const [uploadedFileName, setUploadedFileName] = useState(null);
+  const [uploadedFilePath, setUploadedFilePath] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !portalId) return;
+
+    setUploadState('uploading');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setUploadState('success');
+        setUploadedFilePath(data.saved_path);
+        setUploadedFileName(file.name);
+      } else {
+        setUploadState('error');
+        alert('File upload failed.');
+      }
+    } catch (err) {
+      setUploadState('error');
+      alert('Upload error: ' + err.message);
+    }
+  };
+
+  const clearAttachment = () => {
+    setUploadedFileName(null);
+    setUploadedFilePath(null);
+    setUploadState('idle');
+  };
 
   // Initialize editor
   useEffect(() => {
@@ -57,20 +104,47 @@ steps:
       setSkillId(idMatch[1].trim());
     }
 
-    // Quick lint check
-    try {
-      // Basic check for tabs which are illegal in YAML
-      if (yamlContent.includes('\t')) {
-        setValidationStatus({
-          valid: false,
-          message: 'Syntax Warning: YAML files cannot contain Tab characters. Please use standard spaces instead.'
-        });
-        return;
-      }
-      setValidationStatus({ valid: true, message: 'YAML syntax looks good. Ready to register.' });
-    } catch (err) {
-      setValidationStatus({ valid: false, message: 'Parsing warning: ' + err.message });
+    // Real-time YAML Validator check
+    if (yamlContent.includes('\t')) {
+      setValidationStatus({
+        valid: false,
+        message: 'Invalid syntax: Tabs are illegal in YAML.'
+      });
+      return;
     }
+
+    const lines = yamlContent.split('\n');
+    for (let idx = 0; idx < lines.length; idx++) {
+      const line = lines[idx].trim();
+      
+      // Skip comments, empty lines
+      if (!line || line.startsWith('#')) continue;
+
+      // Extract raw line content (handle list starts)
+      let checkLine = line;
+      if (line.startsWith('-')) {
+        checkLine = line.substring(1).trim();
+      }
+
+      if (!checkLine) continue;
+
+      // Verify key-value mapping colon rule
+      if (checkLine.includes(':')) {
+        const colonIdx = checkLine.indexOf(':');
+        const val = checkLine.substring(colonIdx + 1);
+        
+        // If there's text after the colon, it MUST start with a space!
+        if (val && !val.startsWith(' ')) {
+          setValidationStatus({
+            valid: false,
+            message: `Invalid syntax (Line ${idx + 1}): Missing a space after the colon.`
+          });
+          return;
+        }
+      }
+    }
+
+    setValidationStatus({ valid: true, message: 'YAML syntax looks good.' });
   }, [yamlContent]);
 
   // Parse steps for Visual Preview list
@@ -117,7 +191,8 @@ steps:
           portal_id: portalId,
           prompt: prompt,
           model_provider: 'gemini',
-          existing_yaml: yamlContent // Pass current editor content for intelligent refinement!
+          existing_yaml: yamlContent, // Pass current editor content for intelligent refinement!
+          file_path: uploadedFilePath // Pass uploaded spec file path!
         })
       });
 
@@ -125,13 +200,14 @@ steps:
         const data = await res.json();
         setYamlContent(data.yaml_draft);
         setPrompt(''); // Clear prompt on successful generation
+        clearAttachment(); // Reset rules attachment
         setValidationStatus({ valid: true, message: 'Refinement completed successfully by Skill Builder Agent!' });
       } else {
         const errData = await res.json();
-        alert('Skill Builder Agent error: ' + (errData.detail || 'Failed to refine runbook.'));
+        showCustomModal('Skill Builder Error', errData.detail || 'Failed to refine runbook.', 'error');
       }
     } catch (err) {
-      alert('Network error when contacting Skill Builder Agent: ' + err.message);
+      showCustomModal('Network Error', 'Failed to contact Skill Builder Agent: ' + err.message, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -156,14 +232,13 @@ steps:
       });
 
       if (res.ok) {
-        alert('Skill compiled and registered successfully!');
-        onSaveSuccess();
+        showCustomModal('Success', 'Skill compiled and registered successfully!', 'success');
       } else {
         const errorData = await res.json();
-        alert('Validation error: ' + errorData.detail);
+        showCustomModal('Validation Error', errorData.detail, 'error');
       }
     } catch (err) {
-      alert('Failed to register skill: ' + err.message);
+      showCustomModal('Compilation Failure', 'Failed to register skill: ' + err.message, 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -218,19 +293,56 @@ steps:
               Explain what you want to add or modify in plain English. The agent will read your current YAML code below and apply your changes.
             </p>
 
-            <textarea 
-              className="form-input"
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              placeholder={skill ? "e.g., 'Add a third step that triggers perform_user_sync and make step 2 require manual approval...'" : "e.g., 'First collect the corporate username, verify if they exist, then call create_user endpoint with HITL confirmation...'"}
-              style={{ height: '80px', fontSize: '12px', resize: 'none', background: 'rgba(255,255,255,0.9)' }}
-            />
+            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <textarea 
+                className="form-input"
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                placeholder={skill ? "e.g., 'Add a third step that triggers perform_user_sync and make step 2 require manual approval...'" : "e.g., 'First collect the corporate username, verify if they exist, then call create_user endpoint with HITL confirmation...'"}
+                style={{ height: '90px', fontSize: '12px', resize: 'none', background: 'rgba(255,255,255,0.9)', paddingBottom: '30px', lineHeight: '1.5' }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAgentDraftRefine();
+                  }
+                }}
+              />
+              
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                style={{ display: 'none' }} 
+                onChange={handleFileChange} 
+                accept=".csv,.xlsx,.xls,.json,.txt,.yaml,.yml" 
+              />
+              
+              <div style={{ position: 'absolute', bottom: '8px', left: '12px', right: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
+                <button 
+                  type="button" 
+                  onClick={() => fileInputRef.current.click()} 
+                  disabled={uploadState === 'uploading'}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 4px', borderRadius: '4px' }}
+                  className="hover-accent"
+                  title="Attach Spec or Rules file"
+                >
+                  <Paperclip size={12} style={{ color: 'var(--color-primary)' }} />
+                  <span>{uploadState === 'uploading' ? 'Uploading...' : 'Attach Spec/Rules'}</span>
+                </button>
+                
+                {uploadedFileName && (
+                  <span style={{ fontSize: '10px', background: 'rgba(179,139,77,0.1)', color: 'var(--color-primary)', padding: '1px 6px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '2px', marginLeft: 'auto' }}>
+                    📎 {uploadedFileName.length > 15 ? uploadedFileName.substring(0,12) + '...' : uploadedFileName}
+                    <b onClick={clearAttachment} style={{ cursor: 'pointer', color: 'var(--color-accent)', paddingLeft: '2px' }}>×</b>
+                  </span>
+                )}
+              </div>
+            </div>
             
             <button 
               onClick={handleAgentDraftRefine}
               disabled={isProcessing || !prompt.trim()}
               className="btn-gradient"
-              style={{ padding: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+              style={{ padding: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }}
             >
               <Sparkles size={14} />
               {isProcessing ? 'Agent is thinking...' : (skill ? 'Refine YAML Draft' : 'Draft New Runbook')}
@@ -371,6 +483,90 @@ steps:
         </div>
 
       </div>
+
+      {/* Premium custom alert/validation Modal */}
+      {modal.show && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.45)',
+          backdropFilter: 'blur(5px)',
+          WebkitBackdropFilter: 'blur(5px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div className="glass-panel" style={{
+            width: '450px',
+            maxWidth: '90%',
+            background: '#ffffff',
+            border: `1px solid ${modal.type === 'error' ? 'var(--color-error)' : modal.type === 'success' ? 'var(--color-success)' : 'var(--border-neon-active)'}`,
+            boxShadow: 'var(--shadow-neon), var(--shadow-glow)',
+            padding: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            borderRadius: '16px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {modal.type === 'error' ? (
+                <div style={{ padding: '6px', background: 'rgba(225, 29, 72, 0.08)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <AlertTriangle size={20} style={{ color: 'var(--color-error)' }} />
+                </div>
+              ) : (
+                <div style={{ padding: '6px', background: 'rgba(13, 148, 136, 0.08)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckCircle size={20} style={{ color: 'var(--color-success)' }} />
+                </div>
+              )}
+              <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', fontFamily: 'var(--font-header)' }}>
+                {modal.title}
+              </h3>
+            </div>
+            
+            <div style={{ 
+              fontSize: '12px', 
+              color: 'var(--text-secondary)', 
+              lineHeight: '1.6', 
+              maxHeight: '220px', 
+              overflowY: 'auto',
+              whiteSpace: 'pre-wrap',
+              fontFamily: modal.type === 'error' ? 'var(--font-mono)' : 'var(--font-sans)',
+              background: modal.type === 'error' ? 'rgba(0,0,0,0.02)' : 'transparent',
+              border: modal.type === 'error' ? '1px solid var(--border-neon)' : 'none',
+              borderRadius: modal.type === 'error' ? '8px' : '0',
+              padding: modal.type === 'error' ? '12px' : '0'
+            }} className="custom-scrollbar">
+              {modal.message}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+              <button 
+                onClick={() => {
+                  const savedType = modal.type;
+                  setModal({ show: false, title: '', message: '', type: 'info' });
+                  if (savedType === 'success') {
+                    onSaveSuccess();
+                  }
+                }}
+                className="btn-gradient" 
+                style={{ 
+                  padding: '8px 20px', 
+                  fontSize: '12.5px', 
+                  borderRadius: '8px',
+                  boxShadow: 'none',
+                  background: modal.type === 'error' ? 'var(--color-error)' : 'var(--gradient-brand)'
+                }}
+              >
+                Acknowledge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

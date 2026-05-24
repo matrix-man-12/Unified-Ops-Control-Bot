@@ -108,3 +108,34 @@ You can specify policies for when a step fails:
 
 1. **Avoid Hardcoding Secrets**: Never place API keys, passwords, or session cookies inside the YAML skill. Use `{{secret_placeholder}}` or let the backend dynamic headers automatically inject them from the local `.env` configuration.
 2. **Mutations Approval**: Set `requires_approval: true` on any step that modifies state (POST, PUT, DELETE) to protect production portals from errant executions.
+
+---
+
+## 6. Async Status Verification & Repeated Polling Loops
+
+For long-running async background operations (such as compiling video uploads, booting database instances, or running heavy report generations), you can define a dynamic polling configuration directly inside any `api_call` step!
+
+The executor will execute the initial API call, flat-map the response (e.g. capturing dynamic IDs like `upload_id` or `job_id`), and automatically run an async polling loop calling status checks completely generically until the job completes.
+
+### Polling YAML Step Specification:
+```yaml
+- step: 2
+  id: upload_report
+  action_type: "api_call"
+  tool_name: "post_report"
+  inputs:
+    name: "quarterly_summary"
+  polling_config:
+    interval_seconds: 3               # Sleep duration between checks
+    max_attempts: 10                  # Max polling cycles before timeout
+    status_check_endpoint: "/reports/{id}/status"  # Target check path (supports curly variables interpolation!)
+    status_field: "status"            # Field in the response JSON to verify
+    success_value: "ready"            # Expected value representing completion success
+```
+During run, the console diagnostic shell will stream live updates:
+- `Attempt 1/10: Checking status on '/reports/8302/status'...`
+- `Status response: 'processing'`
+- `Attempt 2/10: Checking status on '/reports/8302/status'...`
+- `Status response: 'ready'`
+- `Status verified successfully! Processing completed.`
+

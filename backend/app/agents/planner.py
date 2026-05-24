@@ -57,6 +57,20 @@ def yaml_safe_load(content: str) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
+def detect_loop_count(query: str) -> int:
+    """Detect if the user is asking to execute actions in a loop/batch."""
+    # Look for number patterns followed by common terms (users, teams, items, portals, roles)
+    match = re.search(r'\b(?:create|add|delete|register|make|run|update|fetch|get)\s+(\d+)\b', query, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    
+    # Check general number followed by words
+    match2 = re.search(r'\b(\d+)\s+(?:users|teams|items|portals|roles|departments|files|channels|messages|videos|skills|requests|calls)\b', query, re.IGNORECASE)
+    if match2:
+        return int(match2.group(1))
+        
+    return 1
+
 def plan_node(state: AgentState) -> Dict[str, Any]:
     """
     Planner Node: Analyzes intent, binds skills or compiles customized tools sequences,
@@ -71,95 +85,97 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
     logs = list(state.get("status_logs", []))
     logs.append(f"Analyzing operational request: '{user_query}'...")
     
-    # 1. Check if a pre-compiled YAML skill matches
-    matched_skill = find_matching_skill(user_query, skills)
-    if matched_skill:
-        logs.append(f"Determined Skill Match: '{matched_skill.get('name')}' (ID: {matched_skill.get('id')})")
-        
-        # Load active portal config and compile swagger tools to resolve routes at plan-time
-        portal = get_portal(portal_id)
-        compiled_tools = []
-        if portal and portal.get("swagger_doc"):
-            try:
-                compiled_tools = compile_openapi_tools(portal_id, portal["swagger_doc"])
-            except Exception as e:
-                logs.append(f"Warning: Swagger spec compilation failed: {e}")
-                
-        plan_steps = []
-        for step in matched_skill.get("steps", []):
-            action_type = step.get("action_type", "api_call")
-            tool_name = step.get("tool_name")
-            
-            # Default values from YAML step if they exist
-            path = step.get("path")
-            method = step.get("method")
-            param_mappings = step.get("param_mappings")
-            
-            # Resolve dynamically from Swagger tool compilation if missing
-            if action_type == "api_call" and tool_name:
-                matched_tool = next((t for t in compiled_tools if t.name == tool_name), None)
-                if matched_tool:
-                    path = path or matched_tool.metadata.get("path")
-                    method = method or matched_tool.metadata.get("method")
-                    param_mappings = param_mappings or matched_tool.metadata.get("param_mappings")
-            
-            plan_steps.append({
-                "step": step.get("step"),
-                "id": step.get("id"),
-                "description": step.get("description", ""),
-                "action_type": action_type,
-                "tool_name": tool_name,
-                "path": path,
-                "method": method,
-                "param_mappings": param_mappings,
-                "inputs": step.get("inputs"),
-                "requires_approval": step.get("requires_approval", False) or step.get("requires_confirmation", False),
-                "input_fields": step.get("input_fields"),
-                "message": step.get("message"),
-                "status": "pending"
-            })
-            
-        # Inspect user query for inline parameters (e.g. extraction of username, email)
-        initial_vars = {}
-        # Simple extraction helper
-        email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', user_query)
-        if email_match:
-            initial_vars["email"] = email_match.group(0)
-            initial_vars["user_email"] = email_match.group(0)
-            
-        logs.append(f"Successfully compiled plan with {len(plan_steps)} sequential actions.")
-        return {
-            "plan": plan_steps,
-            "current_step_index": 0,
-            "variables": initial_vars,
-            "status_logs": logs
-        }
-        
-    # 2. Dynamic planning fallback using LLM
-    logs.append("No pre-defined skill matching. Initializing dynamic Swagger tools compiler...")
+    loop_count = detect_loop_count(user_query)
+    is_loop = loop_count > 1
     
-    # Retrieve dynamic tools listing for context
-    # Note: We pass raw Swagger schemas or simple tool signatures to the prompt
-    # to avoid context overflow on smaller local models.
-    available_tools = []
-    # Dynamic tool listing mock compilation would happen here; we pass metadata
-    # for compiling target schema models
+    # 1. Compile registered Project Skills context dynamically for the LLM
+    skills_context = "No pre-defined Project Skills registered."
+    if skills:
+        skills_list = []
+        for s in skills:
+            yaml_content = yaml_safe_load(s.get("yaml_content", ""))
+            if yaml_content:
+                skills_list.append({
+                    "id": yaml_content.get("id"),
+                    "name": yaml_content.get("name"),
+                    "description": yaml_content.get("description"),
+                    "steps": yaml_content.get("steps")
+                })
+        skills_context = f"Available Pre-defined Project Skills/Templates:\n{json.dumps(skills_list, indent=2)}"
+        
+    # 2. Compile dynamic Swagger operations context dynamically for the LLM
+    portal = get_portal(portal_id)
+    swagger_context = "No active Swagger OpenAPI specification loaded for this portal."
+    if portal and portal.get("swagger_doc"):
+        try:
+            compiled_tools = compile_openapi_tools(portal_id, portal["swagger_doc"])
+            tool_signatures = []
+            for t in compiled_tools:
+                args = []
+                if hasattr(t, "args_schema") and hasattr(t.args_schema, "__fields__"):
+                    args = list(t.args_schema.__fields__.keys())
+                tool_signatures.append({
+                    "name": t.name,
+                    "description": t.description or "",
+                    "arguments": args,
+                    "path": t.metadata.get("path") if hasattr(t, "metadata") else None,
+                    "method": t.metadata.get("method") if hasattr(t, "metadata") else None,
+                    "param_mappings": t.metadata.get("param_mappings") if hasattr(t, "metadata") else None
+                })
+            swagger_context = f"Available API operations you can use as tool_name:\n{json.dumps(tool_signatures, indent=2)}"
+        except Exception as e:
+            swagger_context = f"Active Swagger Spec raw guidelines (compilation issue: {e}):\n{portal['swagger_doc'][:2000]}"
+            
+    # Pre-extract emails or identifiers inside query for loop parameter pre-population
+    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', user_query)
+    initial_params = []
+    if is_loop:
+        for i in range(loop_count):
+            item_params = {}
+            if i < len(emails):
+                item_params["email"] = emails[i]
+                item_params["user_email"] = emails[i]
+            initial_params.append(item_params)
+            
+    logs.append(f"Initializing Dynamic LLM Planner with active skills and API routing tables...")
     
     prompt = f"""
-    You are an expert systems operator and planner. The user wants to achieve: "{user_query}"
+    You are an expert systems operator, compiler, and planner. The user wants to achieve: "{user_query}"
     
-    Your task is to compile a sequential list of steps using available API tools to achieve the goal.
-    Since this is a custom plan, output a JSON array representing the steps. Each step must have:
+    Here is the active Portal API operations context (raw tools):
+    {swagger_context}
+    
+    Here is the list of available Pre-defined Project Skills (reusable templates):
+    {skills_context}
+    
+    Your task is to compile a sequential list of execution steps (runbook plan) to achieve the user's goal.
+    
+    INTELLIGENT PLANNING RULES:
+    1. PRE-DEFINED SKILLS MATCHING: If the user request matches one of the pre-defined Project Skills (e.g. matching the name, description, or intent, like creating a user), you should mimic/compile that skill's step structure. Fill in the 'tool_name', 'path', 'method', and 'param_mappings' exactly as specified in the template.
+    2. DYNAMIC API ROUTING: If no pre-defined skill matches the intent, use the raw API operations listed in the Swagger context to compose a custom plan.
+    3. VARIABLE EXTRACTION: Extract any variables (such as emails, roles, names, ids) provided by the user in their query, and map them to the 'inputs' fields.
+    4. BATCH / LOOP OPERATION:
+       - The user wants to execute operations for {loop_count} items (execution_mode: '{"loop" if is_loop else "single"}').
+       - Ensure every step in the plan is configured with:
+         - execution_mode: "{"loop" if is_loop else "single"}"
+         - loop_count: {loop_count}
+         - current_loop_index: 0
+         - parameter_list: {json.dumps(initial_params) if is_loop else "[]"}
+         - loop_results: {{"passed": 0, "failed": 0, "details": []}} if is_loop else null
+       - If loop count is > 1, extract any inline parameters for the different items (e.g., if query contains multiple emails) and map them as separate dictionaries inside the 'parameter_list' list.
+       
+    Output a JSON array representing the steps. Each step must have:
     - step: integer sequence (1, 2, 3...)
     - id: unique step snake_case ID
     - description: what this step is doing
-    - action_type: always "api_call"
-    - tool_name: the name of the operation (e.g., "create_user" or "get_team_by_name")
+    - action_type: "collect_input" (to gather missing inputs from the user) or "api_call" (to make a REST call) or "manual_instruction"
+    - tool_name: target operation name (e.g., "create_user")
+    - path: REST URL path (e.g., "/users")
+    - method: HTTP method in lowercase (e.g., "post")
+    - param_mappings: list of parameter mapping dicts (e.g. [{"name": "email", "in": "body"}])
     - inputs: input key-value binds
     - requires_approval: true (if it's a POST, PUT, DELETE write operation)
-    
-    If the user has provided specific parameters (like emails, roles), capture them in the 'inputs' dictionary.
-    If some required arguments are missing, don't worry, the executor node will automatically ask the user for them.
+    - input_fields: required only for collect_input step. A list of dicts describing required parameters (e.g. [{"name": "email", "type": "string", "required": true, "description": "email"}])
     
     Response format must be a raw JSON array block inside code fences:
     ```json
@@ -180,10 +196,18 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
             for idx, s in enumerate(plan_steps):
                 s["step"] = idx + 1
                 s["status"] = "pending"
+                if "execution_mode" not in s:
+                    s["execution_mode"] = "loop" if is_loop else "single"
+                    s["loop_count"] = loop_count
+                    s["current_loop_index"] = 0
+                    s["parameter_list"] = initial_params if is_loop else []
+                    s["loop_results"] = {"passed": 0, "failed": 0, "details": []} if is_loop else None
                 if "requires_approval" not in s:
-                    s["requires_approval"] = True # Safe default
+                    # Safe default: approve all writes
+                    m = s.get("method", "get").lower()
+                    s["requires_approval"] = m in ["post", "put", "delete"]
             
-            logs.append(f"Compiled dynamic execution plan with {len(plan_steps)} API steps.")
+            logs.append(f"Successfully compiled plan with {len(plan_steps)} sequential actions using LLM planner.")
             return {
                 "plan": plan_steps,
                 "current_step_index": 0,
@@ -192,7 +216,7 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
         else:
             raise ValueError("LLM response did not contain a valid JSON plan array.")
     except Exception as exc:
-        logs.append(f"Dynamic planner compilation failed: {exc}. Creating fallback single action step.")
+        logs.append(f"LLM planner compilation failed: {exc}. Creating fallback single action step.")
         # Fallback placeholder single action
         fallback_step = {
             "step": 1,
@@ -200,10 +224,17 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
             "description": f"Perform manual review of: {user_query}",
             "action_type": "manual_instruction",
             "message": f"Review and resolve request manually: {user_query}",
-            "status": "pending"
+            "status": "pending",
+            "execution_mode": "single",
+            "loop_count": 1,
+            "current_loop_index": 0,
+            "parameter_list": [],
+            "loop_results": None
         }
         return {
             "plan": [fallback_step],
             "current_step_index": 0,
             "status_logs": logs
         }
+
+

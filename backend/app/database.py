@@ -5,13 +5,14 @@ from typing import List, Dict, Any, Optional
 from app.config import settings
 
 def get_db_connection() -> sqlite3.Connection:
-    """Establish a direct sqlite3 connection to the configured database path."""
+    """Establish a direct sqlite3 connection to the configured database path with foreign keys enabled."""
     conn = sqlite3.connect(settings.SQLITE_DB_PATH)
     conn.row_factory = sqlite3.Row  # Returns dictionaries/rows instead of tuples
+    conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
 def init_db() -> None:
-    """Initialize SQLite tables for Portals, Skills, and Chat Sessions if they do not exist."""
+    """Initialize SQLite tables for Portals, Skills, Chat Sessions, Messages, and Audit Logs if they do not exist."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -48,6 +49,29 @@ def init_db() -> None:
         title TEXT NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY (portal_id) REFERENCES portals (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # 4. Session Messages table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS session_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
+    )
+    """)
+    
+    # 5. Session Audit Logs table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS session_audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        log_text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions (id) ON DELETE CASCADE
     )
     """)
     
@@ -188,3 +212,41 @@ def delete_session(session_id: str) -> None:
     cursor.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     conn.commit()
     conn.close()
+
+def save_message(session_id: str, sender: str, text: str) -> None:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    cursor.execute("""
+    INSERT INTO session_messages (session_id, sender, text, created_at)
+    VALUES (?, ?, ?, ?)
+    """, (session_id, sender, text, now))
+    conn.commit()
+    conn.close()
+
+def list_messages(session_id: str) -> List[Dict[str, Any]]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sender, text, created_at FROM session_messages WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def save_audit_log(session_id: str, log_text: str) -> None:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    cursor.execute("""
+    INSERT INTO session_audit_logs (session_id, log_text, created_at)
+    VALUES (?, ?, ?)
+    """, (session_id, log_text, now))
+    conn.commit()
+    conn.close()
+
+def list_audit_logs(session_id: str) -> List[str]:
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT log_text FROM session_audit_logs WHERE session_id = ? ORDER BY id ASC", (session_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [r["log_text"] for r in rows]

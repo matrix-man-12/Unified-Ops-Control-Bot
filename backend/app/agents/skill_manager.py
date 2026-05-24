@@ -60,18 +60,25 @@ def parse_and_validate_skill_yaml(yaml_string: str) -> Dict[str, Any]:
 
 def interpolate_inputs(inputs: Dict[str, Any], variables: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Interpolate execution variables into parameter fields containing {{bracket_placeholders}}.
-    Example: email: "{{user_email}}" -> email: "dev@company.com"
+    Interpolate execution variables into parameter fields containing {{bracket_placeholders}} or {bracket_placeholders}.
+    Example: email: "{{user_email}}" or email: "{user_email}" -> email: "dev@company.com"
     """
     if not inputs:
         return {}
         
     interpolated = {}
     for key, value in inputs.items():
-        if isinstance(value, str) and value.startswith("{{") and value.endswith("}}"):
-            var_name = value[2:-2].strip()
-            # If variable exists in active state variables, bind it
-            interpolated[key] = variables.get(var_name, value)
+        if isinstance(value, str):
+            # Check double curly braces first
+            if value.startswith("{{") and value.endswith("}}"):
+                var_name = value[2:-2].strip()
+                interpolated[key] = variables.get(var_name, value)
+            # Check single curly brace fallback
+            elif value.startswith("{") and value.endswith("}"):
+                var_name = value[1:-1].strip()
+                interpolated[key] = variables.get(var_name, value)
+            else:
+                interpolated[key] = value
         else:
             interpolated[key] = value
             

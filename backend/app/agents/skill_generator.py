@@ -7,11 +7,12 @@ from app.database import get_portal
 from app.agents.planner import get_llm
 from app.agents.skill_manager import parse_and_validate_skill_yaml
 
-def generate_portal_skill_yaml(portal_id: str, prompt_description: str, provider: str = "gemini", existing_yaml: Optional[str] = None) -> str:
+def generate_portal_skill_yaml(portal_id: str, prompt_description: str, provider: str = "gemini", existing_yaml: Optional[str] = None, file_path: Optional[str] = None) -> str:
     """
     Skill Generator Agent: Generates a fully validated YAML skill config
     based on the user's plain-text prompt description and the portal's active Swagger spec.
     If existing_yaml is provided, it refines the existing skill draft instead of starting from scratch.
+    Supports reading text/JSON/CSV attachments to extract advanced constraints.
     """
     portal = get_portal(portal_id)
     if not portal:
@@ -59,6 +60,22 @@ The user wants to make the following modification/refinement:
 You must modify the existing YAML runbook to incorporate this request. Maintain all existing fields and structure where possible. Only modify steps or fields necessary to satisfy the request. Ensure it still adheres to the schema below.
 """
 
+    file_context = ""
+    if file_path:
+        import os
+        if os.path.exists(file_path):
+            try:
+                filename = os.path.basename(file_path)
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                file_context = f"""
+=== ATTACHED SPECIFICATION FILE DATA ({filename}) ===
+{content}
+=== END OF ATTACHED SPECIFICATION FILE DATA ===
+"""
+            except Exception as e:
+                file_context = f"\n[Unable to read text contents of attached file: {e}]\n"
+
     system_prompt = f"""
 You are an expert Systems Architect and Skill Builder Agent. Your job is to create or refine a valid, fully compiled **Project Skill YAML** file that our LangGraph agent can read and execute.
 This skill represents a sequential runbook to automate operations inside the portal with ID '{portal_id}'.
@@ -66,8 +83,9 @@ This skill represents a sequential runbook to automate operations inside the por
 Here is the target portal's active API Swagger context:
 {swagger_context}
 {refinement_instruction}
+{file_context}
 
-{"The user wants to create a skill that does:" if not existing_yaml else "Based on the user refinement request above, modify the YAML. Note the general schema guidelines:"}
+{"The user wants to create a skill that does:" if not existing_yaml else "Based on the user refinement request and attached context, modify the YAML. Note the general schema guidelines:"}
 "{prompt_description}"
 
 You must output a single, valid YAML document that adheres exactly to the following ProjectSkillSchema format:
@@ -84,9 +102,9 @@ steps:
     action_type: "collect_input" # Choices: collect_input, api_call, manual_instruction
     input_fields: # Required only for collect_input
       - name: "email"
-        type: "string"
-        required: true
-        description: "Corporate email address"
+      - type: "string"
+      - required: true
+      - description: "Corporate email address"
   - step: 2
     id: step_two_unique_id
     description: "Call target API"
@@ -102,6 +120,11 @@ Rules for Skill Drafting/Refining:
 2. If the user request implies collecting details (like email, username, team), create a `collect_input` step FIRST to gather them.
 3. If an API call is state-modifying (e.g. POST, PUT, DELETE), always set `requires_approval: true`.
 4. Output ONLY the raw YAML code block inside fences. Do not add conversational text.
+
+Advanced Rules for Business Logic & Schema Overrides:
+5. UI DEPENDENCY & CONDITIONAL INPUT MAPPINGS: If the user prompt or attached file describes a UI behavior or conditional constraint (e.g. "if checkbox X is checked, then field Y becomes required"), model this in the `collect_input` step's description, or include clear input fields for both so that the execution form can capture the condition.
+6. SWAGGER SPECIFICATION OVERRIDES: If the OpenAPI spec marks a parameter as optional but the user states in their query or file data that it is required (or vice versa), override the spec and enforce it as required (i.e. set `required: true` in the `input_fields` block, and make sure it is mapped under `inputs` of the `api_call` step).
+7. MOCK DATA & SCHEMAS ALIGNMENT: Parse any attached CSV templates, spreadsheets, JSON payloads, or schema files to match the YAML fields exactly with the expected variable names, formats, types, and values of your API steps.
 
 Response Fences:
 ```yaml

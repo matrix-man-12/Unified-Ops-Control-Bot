@@ -15,7 +15,7 @@ from app.database import (
 )
 from app.agents.graph import compiled_graph
 from app.agents.skill_manager import parse_and_validate_skill_yaml
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 
 app = FastAPI(
     title="Unified Portal Agent Backend",
@@ -93,6 +93,7 @@ class SkillGenerateInput(BaseModel):
     prompt: str
     model_provider: Optional[str] = "gemini"
     existing_yaml: Optional[str] = None
+    file_path: Optional[str] = None
 
 @app.post("/api/skills/generate")
 def generate_skill(payload: SkillGenerateInput):
@@ -102,7 +103,8 @@ def generate_skill(payload: SkillGenerateInput):
             portal_id=payload.portal_id,
             prompt_description=payload.prompt,
             provider=payload.model_provider,
-            existing_yaml=payload.existing_yaml
+            existing_yaml=payload.existing_yaml,
+            file_path=payload.file_path
         )
         return {
             "success": True,
@@ -115,6 +117,37 @@ def generate_skill(payload: SkillGenerateInput):
 def remove_skill(skill_id: str):
     delete_skill(skill_id)
     return {"success": True}
+
+# --- REST Sessions Routing ---
+class SessionInput(BaseModel):
+    id: str
+    portal_id: str
+    title: str
+
+@app.post("/api/sessions")
+def create_new_session(payload: SessionInput):
+    try:
+        save_session(payload.id, payload.portal_id, payload.title)
+        return {"success": True, "session_id": payload.id}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.get("/api/sessions")
+def get_all_sessions(portal_id: Optional[str] = None):
+    try:
+        return list_sessions(portal_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+@app.delete("/api/sessions/{session_id}")
+def remove_session(session_id: str):
+    try:
+        delete_session(session_id)
+        if session_id in ACTIVE_SESSIONS_STATE:
+            del ACTIVE_SESSIONS_STATE[session_id]
+        return {"success": True, "message": "Session removed successfully."}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 # --- REST File uploads pipeline ---
 @app.post("/api/upload")
@@ -170,29 +203,82 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 
             # Initialize or recover the active session graph state
             if session_id not in ACTIVE_SESSIONS_STATE:
-                ACTIVE_SESSIONS_STATE[session_id] = {
-                    "messages": [],
-                    "portal_id": portal_id,
-                    "skills": list_skills(portal_id),
-                    "plan": [],
-                    "current_step_index": 0,
-                    "variables": {},
-                    "interrupt_payload": None,
-                    "status_logs": [f"Session initialized for Portal: '{portal['name']}'."],
-                    "model_provider": model_provider
-                }
-                save_session(session_id, portal_id, title=user_msg[:30] or "New Operations Run")
+                from app.database import list_messages, list_audit_logs, get_session, save_session, save_audit_log
+                existing_session = get_session(session_id)
+                
+                if existing_session:
+                    db_msgs = list_messages(session_id)
+                    db_logs = list_audit_logs(session_id)
+                    
+                    lc_messages = []
+                    for m in db_msgs:
+                        if m["sender"] == "user":
+                            lc_messages.append(HumanMessage(content=m["text"]))
+                        else:
+                            lc_messages.append(AIMessage(content=m["text"]))
+                            
+                    ACTIVE_SESSIONS_STATE[session_id] = {
+                        "messages": lc_messages,
+                        "portal_id": portal_id,
+                        "skills": list_skills(portal_id),
+                        "plan": [],
+                        "current_step_index": 0,
+                        "variables": {},
+                        "interrupt_payload": None,
+                        "status_logs": db_logs if db_logs else [f"Session restored for Portal: '{portal['name']}'."],
+                        "model_provider": model_provider
+                    }
+                else:
+                    ACTIVE_SESSIONS_STATE[session_id] = {
+                        "messages": [],
+                        "portal_id": portal_id,
+                        "skills": list_skills(portal_id),
+                        "plan": [],
+                        "current_step_index": 0,
+                        "variables": {},
+                        "interrupt_payload": None,
+                        "status_logs": [f"Session initialized for Portal: '{portal['name']}'."],
+                        "model_provider": model_provider
+                    }
+                    save_session(session_id, portal_id, title="New Operations Run")
+                    save_audit_log(session_id, f"Session initialized for Portal: '{portal['name']}'.")
                 
             session_state = ACTIVE_SESSIONS_STATE[session_id]
             session_state["model_provider"] = model_provider
             
             # Process command subtypes
-            if cmd_type == "form_submit":
+            if cmd_type == "restore":
+                from app.database import list_messages, list_audit_logs
+                db_msgs = [{"sender": m["sender"], "text": m["text"]} for m in list_messages(session_id)]
+                db_logs = list_audit_logs(session_id)
+                
+                await websocket.send_text(json.dumps({
+                    "type": "restore",
+                    "messages": db_msgs if db_msgs else [
+                        {"sender": "agent", "text": "Hello! I am your Unified Portal Agent. Please configure and select a Portal in the left sidebar, and teach me some Swagger and Project Skill runbooks. Once done, ask me to perform operations!"}
+                    ],
+                    "logs": db_logs if db_logs else [f"Session restored for Portal: '{portal['name']}'."],
+                    "plan": session_state["plan"],
+                    "current_step_index": session_state["current_step_index"]
+                }))
+                continue
+                
+            elif cmd_type == "form_submit":
                 # User returned parameter form submissions
                 form_fields = data.get("variables", {})
                 session_state["variables"].update(form_fields)
+                
+                # Dynamic loop parameters list extraction
+                parameter_list = data.get("parameter_list")
+                if parameter_list:
+                    idx = session_state.get("current_step_index", 0)
+                    plan = session_state.get("plan", [])
+                    if idx < len(plan):
+                        plan[idx]["parameter_list"] = parameter_list
+                        
                 session_state["interrupt_payload"] = None
                 session_state["status_logs"].append("Resuming execution with provided input parameters.")
+
                 
             elif cmd_type == "hitl_response":
                 # User clicked Approve or Cancel inside HITL screen
@@ -212,6 +298,18 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 # Standard fresh incoming query
                 session_state["messages"].append(HumanMessage(content=user_msg))
                 
+                # Persist user message to SQLite database
+                from app.database import save_message, save_session
+                save_message(session_id, "user", user_msg)
+                
+                # Update title of session in DB if it was default
+                if user_msg:
+                    from app.database import get_session
+                    sess = get_session(session_id)
+                    if sess and (sess["title"] == "New Operations Run" or sess["title"].startswith("Session initialized")):
+                        new_title = user_msg[:30] or "Operations Run"
+                        save_session(session_id, portal_id, new_title)
+                
                 # Reset plan and index state for the new user query to force re-planning
                 session_state["plan"] = []
                 session_state["current_step_index"] = 0
@@ -229,11 +327,21 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 "logs": session_state["status_logs"]
             }))
             
+            # Save any new status logs that were added before Graph run
+            from app.database import save_audit_log, save_message
+            
             # Trigger/Resume LangGraph engine
             try:
+                old_logs_len = len(session_state["status_logs"])
+                
                 result_state = compiled_graph.invoke(session_state)
                 # Store back current graph outcomes
                 ACTIVE_SESSIONS_STATE[session_id] = result_state
+                
+                # Save any newly generated execution logs to the database for compliance audits
+                new_logs = result_state["status_logs"][old_logs_len:]
+                for log in new_logs:
+                    save_audit_log(session_id, log)
                 
                 # Check if graph ended or paused on interrupt
                 interrupt = result_state.get("interrupt_payload")
@@ -250,6 +358,10 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 else:
                     # Graph reached final step successfully
                     last_log = result_state["status_logs"][-1] if result_state["status_logs"] else "Execution complete."
+                    
+                    # Persist agent completion response text to database
+                    save_message(session_id, "agent", last_log)
+                    
                     await websocket.send_text(json.dumps({
                         "type": "completion",
                         "message": last_log,

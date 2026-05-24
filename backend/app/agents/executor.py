@@ -45,6 +45,8 @@ def parse_bulk_file(file_path: str) -> List[Dict[str, Any]]:
         
     return []
 
+import time
+
 def execute_node(state: AgentState) -> Dict[str, Any]:
     """
     Executor Node: Executes steps sequentially, handling dynamic form pauses,
@@ -67,6 +69,8 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
     step = plan[idx]
     action_type = step.get("action_type")
     step_id = step.get("id")
+    execution_mode = step.get("execution_mode", "single")
+    loop_count = step.get("loop_count", 1) or 1
     
     # Mark step as running in logs
     if step.get("status") == "pending":
@@ -74,7 +78,6 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
         logs.append(f"Starting Step {step.get('step')}: {step.get('description')}")
         
     # Check if this node is returning from an approved HITL interrupt
-    # We look for a special execution flag in the variables database
     has_approval = variables.get(f"_approved_{step_id}", False)
     cancelled = variables.get(f"_cancelled_{step_id}", False)
     
@@ -90,43 +93,85 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
     # --- 1. COLLECT INPUT ACTION ---
     if action_type == "collect_input":
         input_fields = step.get("input_fields", [])
-        missing_fields = []
         
-        for field in input_fields:
-            name = field.get("name")
-            if name not in variables:
-                missing_fields.append(field)
+        if execution_mode == "loop":
+            parameter_list = step.get("parameter_list", []) or []
+            
+            # Check if parameter_list contains all loop items and has all required fields populated
+            needs_collection = False
+            if len(parameter_list) < loop_count:
+                needs_collection = True
+            else:
+                for item in parameter_list:
+                    for field in input_fields:
+                        if field.get("required") and field.get("name") not in item:
+                            needs_collection = True
+                            break
+                            
+            if needs_collection:
+                logs.append(f"Execution halted. Collecting input parameters for {loop_count} items in bulk form...")
+                form_payload = {
+                    "type": "form_request",
+                    "step_id": step_id,
+                    "execution_mode": "loop",
+                    "loop_count": loop_count,
+                    "title": step.get("description"),
+                    "fields": input_fields,
+                    "parameter_list": parameter_list
+                }
+                step["status"] = "interrupted"
+                return {
+                    "plan": plan,
+                    "status_logs": logs,
+                    "interrupt_payload": form_payload
+                }
                 
-        if missing_fields:
-            # We have missing inputs! Pause graph and trigger dynamic form
-            logs.append(f"Execution halted. Parameters missing. Displaying input collection form...")
-            form_payload = {
-                "type": "form_request",
-                "step_id": step_id,
-                "title": step.get("description"),
-                "fields": missing_fields
-            }
-            step["status"] = "interrupted"
+            # If all bulk parameters are populated, advance
+            step["status"] = "completed"
+            logs.append(f"Step {step.get('step')}: Bulk parameters collected successfully.")
             return {
                 "plan": plan,
+                "current_step_index": idx + 1,
                 "status_logs": logs,
-                "interrupt_payload": form_payload
+                "interrupt_payload": None
             }
             
-        # If all fields are collected, mark step as completed and increment
-        step["status"] = "completed"
-        logs.append(f"Step {step.get('step')}: Dynamic parameters collected successfully.")
-        return {
-            "plan": plan,
-            "current_step_index": idx + 1,
-            "status_logs": logs,
-            "interrupt_payload": None
-        }
-        
+        else:
+            # Single mode collect_input
+            missing_fields = []
+            for field in input_fields:
+                name = field.get("name")
+                if name not in variables:
+                    missing_fields.append(field)
+                    
+            if missing_fields:
+                logs.append(f"Execution halted. Parameters missing. Displaying input collection form...")
+                form_payload = {
+                    "type": "form_request",
+                    "step_id": step_id,
+                    "execution_mode": "single",
+                    "title": step.get("description"),
+                    "fields": missing_fields
+                }
+                step["status"] = "interrupted"
+                return {
+                    "plan": plan,
+                    "status_logs": logs,
+                    "interrupt_payload": form_payload
+                }
+                
+            step["status"] = "completed"
+            logs.append(f"Step {step.get('step')}: Dynamic parameters collected successfully.")
+            return {
+                "plan": plan,
+                "current_step_index": idx + 1,
+                "status_logs": logs,
+                "interrupt_payload": None
+            }
+            
     # --- 2. MANUAL INSTRUCTION ACTION ---
     elif action_type == "manual_instruction":
         if not has_approval:
-            # Trigger confirmation checkbox flow
             logs.append(f"Execution halted. Manual step validation required by operator.")
             hitl_payload = {
                 "type": "hitl_request",
@@ -154,33 +199,45 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
     # --- 3. API CALL ACTION ---
     elif action_type == "api_call":
         tool_name = step.get("tool_name")
-        raw_inputs = step.get("inputs", {})
-        
-        # Interpolate variables dynamically
-        interpolated = interpolate_inputs(raw_inputs, variables)
-        
-        # Check if the user has uploaded a file for bulk execution mapping
-        bulk_file = variables.get("_uploaded_bulk_file")
-        bulk_rows = []
-        if bulk_file:
-            bulk_rows = parse_bulk_file(bulk_file)
-            # Remove from variables to prevent loops
-            variables["_uploaded_bulk_file"] = None
-            
-        # Detect mutations & approvals
+        raw_inputs = step.get("inputs", {}) or {}
         requires_approval = step.get("requires_approval", False)
         
+        # Determine approval gating
         if requires_approval and not has_approval:
-            # Pause and ask for Human-in-the-Loop Confirmation
-            logs.append(f"Execution halted. Step requires operator authorization.")
-            hitl_payload = {
-                "type": "hitl_request",
-                "step_id": step_id,
-                "mode": "api_approval",
-                "tool_name": tool_name,
-                "inputs": interpolated,
-                "title": f"Authorize Action: {tool_name}"
-            }
+            logs.append(f"Execution halted. Action authorization required by systems operator.")
+            
+            if execution_mode == "loop":
+                parameter_list = step.get("parameter_list", [])
+                interpolated_list = []
+                for index in range(loop_count):
+                    row_vars = variables.copy()
+                    if index < len(parameter_list):
+                        row_vars.update(parameter_list[index])
+                    interpolated_item = interpolate_inputs(raw_inputs, row_vars)
+                    interpolated_list.append(interpolated_item)
+                    
+                hitl_payload = {
+                    "type": "hitl_request",
+                    "step_id": step_id,
+                    "mode": "api_approval",
+                    "execution_mode": "loop",
+                    "loop_count": loop_count,
+                    "tool_name": tool_name,
+                    "parameter_list": interpolated_list,
+                    "title": f"Authorize Batch Action: {tool_name}"
+                }
+            else:
+                interpolated = interpolate_inputs(raw_inputs, variables)
+                hitl_payload = {
+                    "type": "hitl_request",
+                    "step_id": step_id,
+                    "mode": "api_approval",
+                    "execution_mode": "single",
+                    "tool_name": tool_name,
+                    "inputs": interpolated,
+                    "title": f"Authorize Action: {tool_name}"
+                }
+                
             step["status"] = "interrupted"
             return {
                 "plan": plan,
@@ -188,65 +245,102 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
                 "interrupt_payload": hitl_payload
             }
             
-        # --- BULK RUN LOGIC ---
-        if bulk_rows:
-            logs.append(f"Bulk data detected ({len(bulk_rows)} items). Executing batch mapping loop...")
-            success_count = 0
+        # --- BATCH/LOOP RUN STATE ENGINE ---
+        if execution_mode == "loop":
+            parameter_list = step.get("parameter_list", []) or []
+            logs.append(f"Starting dynamic batch iteration loop (count = {loop_count})...")
             
-            for index, row in enumerate(bulk_rows):
-                # Bind spreadsheet row variables to execution scope
+            step["loop_results"] = {"passed": 0, "failed": 0, "details": []}
+            
+            for index in range(loop_count):
+                step["current_loop_index"] = index
                 row_vars = variables.copy()
-                row_vars.update(row)
+                if index < len(parameter_list):
+                    row_vars.update(parameter_list[index])
+                    
                 row_inputs = interpolate_inputs(raw_inputs, row_vars)
                 row_inputs["portal_id"] = portal_id
                 
-                # Execute REST call
-                logs.append(f"Batch ({index + 1}/{len(bulk_rows)}): Calling {tool_name} for {row.get('email', 'row ' + str(index + 1))}...")
+                # Fetch dynamic path and method bounds
+                path = step.get("path", "/users")
+                method = step.get("method", "post")
+                param_mappings = step.get("param_mappings") or [{"name": k, "in": "body"} for k in row_inputs.keys()]
+                
+                # Dynamic interpolation inside paths (e.g. /users/{user_id})
+                for k, v in row_vars.items():
+                    path = path.replace(f"{{{k}}}", str(v))
+                    
+                item_desc = row_vars.get("email") or row_vars.get("name") or row_vars.get("id") or f"item {index + 1}"
+                logs.append(f"Loop ({index + 1}/{loop_count}): Calling {tool_name} for {item_desc}...")
+                
                 res = make_http_call(
                     portal_id=portal_id,
-                    path=step.get("path", "/users"), # Fallback path
-                    method=step.get("method", "post"),
-                    param_mappings=[{"name": k, "in": "body"} for k in row_inputs.keys()],
+                    path=path,
+                    method=method,
+                    param_mappings=param_mappings,
                     kwargs=row_inputs
                 )
                 
+                # Dynamic skill-driven Polling checking helper
+                res_data = res.get("data", {})
+                if isinstance(res_data, dict):
+                    row_vars.update(res_data)
+                    
+                poll = step.get("polling_config")
+                if res.get("success") and poll:
+                    interval = poll.get("interval_seconds", 2)
+                    max_attempts = poll.get("max_attempts", 5)
+                    status_path = poll.get("status_check_endpoint", "")
+                    status_field = poll.get("status_field", "status")
+                    success_value = poll.get("success_value", "ready")
+                    
+                    logs.append(f"Initiating dynamic status verification check for {item_desc}...")
+                    
+                    for attempt in range(1, max_attempts + 1):
+                        time.sleep(interval)
+                        # Interpolate check endpoint paths
+                        polled_path = status_path
+                        for k, v in row_vars.items():
+                            polled_path = polled_path.replace(f"{{{k}}}", str(v))
+                            
+                        logs.append(f"Attempt {attempt}/{max_attempts}: Checking status on '{polled_path}'...")
+                        poll_res = make_http_call(
+                            portal_id=portal_id,
+                            path=polled_path,
+                            method="get",
+                            param_mappings=[],
+                            kwargs={}
+                        )
+                        
+                        if poll_res.get("success"):
+                            poll_data = poll_res.get("data", {})
+                            current_status = poll_data.get(status_field) if isinstance(poll_data, dict) else ""
+                            logs.append(f"Status checked: '{current_status}'")
+                            if current_status == success_value:
+                                logs.append("Status verified successfully!")
+                                res = poll_res
+                                break
+                        else:
+                            logs.append(f"Status check failed: {poll_res.get('error')}")
+                            
+                # Aggregate results
                 if res.get("success"):
-                    success_count += 1
+                    step["loop_results"]["passed"] += 1
+                    step["loop_results"]["details"].append({"index": index, "success": True, "data": res.get("data")})
+                    logs.append(f"[{step['loop_results']['passed']} passed, {step['loop_results']['failed']} failed] Loop {index + 1}/{loop_count} success.")
+                else:
+                    step["loop_results"]["failed"] += 1
+                    err_text = res.get("error") or res.get("data", {}).get("detail") or "API error"
+                    step["loop_results"]["details"].append({"index": index, "success": False, "error": err_text})
+                    logs.append(f"[{step['loop_results']['passed']} passed, {step['loop_results']['failed']} failed] Loop {index + 1}/{loop_count} failed: {err_text}")
                     
             step["status"] = "completed"
-            logs.append(f"Batch processing completed. Successful calls: {success_count}/{len(bulk_rows)}.")
-            return {
-                "plan": plan,
-                "current_step_index": idx + 1,
-                "status_logs": logs,
-                "interrupt_payload": None
-            }
+            summary_msg = f"Batch processing completed. Final status: {step['loop_results']['passed']} passed, {step['loop_results']['failed']} failed."
+            logs.append(summary_msg)
             
-        # --- SINGLE RUN LOGIC ---
-        interpolated["portal_id"] = portal_id
-        logs.append(f"Executing call: {tool_name} with parameters: {json.dumps(interpolated)}")
-        
-        # Execute actual HTTP Call
-        res = make_http_call(
-            portal_id=portal_id,
-            path=step.get("path", "/users"),
-            method=step.get("method", "post"),
-            param_mappings=step.get("param_mappings") or [{"name": k, "in": "body"} for k in interpolated.keys()],
-            kwargs=interpolated
-        )
-        
-        if res.get("success"):
-            step["status"] = "completed"
-            logs.append(f"Step {step.get('step')}: Tool call success. Status {res.get('status_code')}.")
+            # Map loop outputs back to variables database
+            variables[f"{step_id}_results"] = step["loop_results"]
             
-            # Map outputs to memory scope for downstream interpolations
-            res_data = res.get("data", {})
-            if isinstance(res_data, dict):
-                for k, v in res_data.items():
-                    variables[f"{step_id}.{k}"] = v
-                    # Also bind flats
-                    variables[k] = v
-                    
             return {
                 "plan": plan,
                 "current_step_index": idx + 1,
@@ -254,29 +348,104 @@ def execute_node(state: AgentState) -> Dict[str, Any]:
                 "status_logs": logs,
                 "interrupt_payload": None
             }
-        else:
-            step["status"] = "failed"
-            error_msg = res.get("error") or res.get("data", {}).get("detail") or "Unknown API error"
-            logs.append(f"Step {step.get('step')} failed with error: {error_msg}")
             
-            # Failure policy lookup
-            on_fail = step.get("on_failure")
-            if on_fail and on_fail.get("action") == "stop":
+        else:
+            # --- SINGLE RUN ENGINE ---
+            interpolated = interpolate_inputs(raw_inputs, variables)
+            interpolated["portal_id"] = portal_id
+            
+            path = step.get("path", "/users")
+            method = step.get("method", "post")
+            param_mappings = step.get("param_mappings") or [{"name": k, "in": "body"} for k in interpolated.keys()]
+            
+            # Interpolate dynamic url params
+            for k, v in variables.items():
+                path = path.replace(f"{{{k}}}", str(v))
+                
+            logs.append(f"Executing call: {tool_name} with parameters: {json.dumps(interpolated)}")
+            
+            res = make_http_call(
+                portal_id=portal_id,
+                path=path,
+                method=method,
+                param_mappings=param_mappings,
+                kwargs=interpolated
+            )
+            
+            # Single status polling checking helper
+            res_data = res.get("data", {})
+            if isinstance(res_data, dict):
+                variables.update(res_data)
+                
+            poll = step.get("polling_config")
+            if res.get("success") and poll:
+                interval = poll.get("interval_seconds", 2)
+                max_attempts = poll.get("max_attempts", 5)
+                status_path = poll.get("status_check_endpoint", "")
+                status_field = poll.get("status_field", "status")
+                success_value = poll.get("success_value", "ready")
+                
+                logs.append("Initiating dynamic single status verification check...")
+                
+                for attempt in range(1, max_attempts + 1):
+                    time.sleep(interval)
+                    polled_path = status_path
+                    for k, v in variables.items():
+                        polled_path = polled_path.replace(f"{{{k}}}", str(v))
+                        
+                    logs.append(f"Attempt {attempt}/{max_attempts}: Checking status on '{polled_path}'...")
+                    poll_res = make_http_call(
+                        portal_id=portal_id,
+                        path=polled_path,
+                        method="get",
+                        param_mappings=[],
+                        kwargs={}
+                    )
+                    
+                    if poll_res.get("success"):
+                        poll_data = poll_res.get("data", {})
+                        current_status = poll_data.get(status_field) if isinstance(poll_data, dict) else ""
+                        logs.append(f"Status checked: '{current_status}'")
+                        if current_status == success_value:
+                            logs.append("Status verified successfully!")
+                            res = poll_res
+                            break
+                    else:
+                        logs.append(f"Status check failed: {poll_res.get('error')}")
+                        
+            if res.get("success"):
+                step["status"] = "completed"
+                logs.append(f"Step {step.get('step')}: Tool call success. Status {res.get('status_code')}.")
+                
+                # Flat map response data
+                res_data = res.get("data", {})
+                if isinstance(res_data, dict):
+                    for k, v in res_data.items():
+                        variables[f"{step_id}.{k}"] = v
+                        variables[k] = v
+                        
+                return {
+                    "plan": plan,
+                    "current_step_index": idx + 1,
+                    "variables": variables,
+                    "status_logs": logs,
+                    "interrupt_payload": None
+                }
+            else:
+                step["status"] = "failed"
+                error_msg = res.get("error") or res.get("data", {}).get("detail") or "Unknown API error"
+                logs.append(f"Step {step.get('step')} failed with error: {error_msg}")
+                
+                # Halt execution on failure
                 return {
                     "plan": plan,
                     "status_logs": logs,
                     "interrupt_payload": None
                 }
                 
-            # Default fallback: halt plan on any API failure
-            return {
-                "plan": plan,
-                "status_logs": logs,
-                "interrupt_payload": None
-            }
-            
     return {
         "plan": plan,
         "status_logs": logs,
         "interrupt_payload": None
     }
+
