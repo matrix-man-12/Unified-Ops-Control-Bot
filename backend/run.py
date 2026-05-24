@@ -30,7 +30,7 @@ def main():
     # 2. Start the main FastAPI application server
     print("[2/2] Launching Main Agent WebSocket Server on http://127.0.0.1:8000...")
     main_process = subprocess.Popen(
-        [python_exe, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"],
+        [python_exe, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
         cwd=str(backend_dir)
     )
     

@@ -36,7 +36,7 @@ app.add_middleware(
 from fastapi.staticfiles import StaticFiles
 DOCS_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "docs", "html"))
 if os.path.exists(DOCS_PATH):
-    app.mount("/documentation", StaticFiles(directory=DOCS_PATH), name="docs")
+    app.mount("/documentation", StaticFiles(directory=DOCS_PATH, html=True), name="docs")
 
 # Startup database provisioning
 @app.on_event("startup")
