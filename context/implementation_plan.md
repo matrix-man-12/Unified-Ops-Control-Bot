@@ -1,265 +1,165 @@
-# Generic Portal Control Agent: Architecture & Implementation Plan
+# Generic Dynamic LLM Planner & Executor with Robust Batch/Loop Execution
 
-This document outlines the detailed architecture and implementation plan for building a **Generic Portal Control Agent**. The system is designed to run entirely offline, with zero external or paid dependencies, utilizing LangGraph, FastAPI, and React. It empowers corporate teams to control complex portal interfaces and execute workflows via a unified chat interface with advanced features like:
-
-1. **Dynamic OpenAPI Tool Ingestion**: Generates executable LangChain tools from Swagger/OpenAPI specifications.
-2. **YAML-based Project Skills**: A declarative schema for defining UI flows, sequential dependencies (e.g., "click A, then B"), rules, and custom workflow logic.
-3. **Advanced Interactivity**: Support for dynamic UI forms, file uploads (for bulk actions), progress trackers, and real-time execution steps directly within the chat.
-4. **Human-in-the-Loop (HITL)**: Mandatory confirmation workflows for state-modifying or destructive API calls.
-5. **Local-First Design**: Completely offline-capable, using local package dependencies and supporting local LLM runtimes (e.g., Ollama or a custom local OpenAI-compatible server).
+This document details the architectural design and implementation plan to add native support for **generic dynamic loop planning, parameter extraction, and batch execution**. This enables users to perform bulk actions (e.g. "Create 5 users") dynamically, without hardcoding any portal logic. It details the structured LLM input/output formats, loop schemas, human-in-the-loop batch authorization, and UI scrollability and thought-process updates.
 
 ---
 
-## User Review & Dynamic Adaptations
+## User Review Required
 
-Based on user review and architectural alignment, the following strategies have been integrated:
+We are introducing a powerful, fully generic dynamic orchestration layer. Please review the proposed schemas, designs, and interactive flows:
 
-### 1. Unified LLM Integration Strategy
-The agent's LLM engine is completely provider-agnostic. We support three primary configurations via environment variables (`.env`) or a UI settings interface:
-- **Gemini API**: Accessible via `langchain-google-genai` using a Gemini API key.
-- **OpenAI-Compatible Providers**: Integrates with local inference servers (Ollama, Llama.cpp, vLLM).
-- **Corporate Agent Builder**: Connects directly to your internal corporate platform using its specific Base URL, API key, and target model identifiers.
-
-### 2. Secret & Configuration Storage
-For ease of setup and corporate security bounds, portal authorization tokens, endpoints, API keys, and target URLs are stored locally:
-- Stored securely in a local `.env` configuration file alongside the project.
-- Cached locally in an offline SQLite database for dynamic session-level modifications.
-- Provided a clean UI configuration panel to enter, view, and save these settings locally without cloud leaks.
-
-### 3. Rich Bulk Data & Multimedia Inputs
-Our upload module accommodates diverse operations:
-- **Bulk Data Files**: Support for **CSV**, **JSON**, and **Excel (`.xlsx`)** spreadsheets parsed via local python dependencies (`openpyxl`).
-- **Multimedia Uploads**: Ability to attach **images** and **videos** required by specific portal actions.
-- **Local Storage Pipeline**: Uploaded files are streamed to `/backend/uploads/` on the server and their local paths or file-buffers are passed directly as arguments to the dynamically generated tools.
-
-### 4. Fully Isolated & Reusable Directory Architecture
-The workspace is split into isolated modules:
-- `/frontend`: Independent React React + Vite + Vanilla CSS application.
-- `/backend`: Independent FastAPI Python server.
-- `/backend/venv`: Isolated Python virtual environment to manage dependencies locally.
-- `/docs`: Unified user manuals, skill format schemas, and dynamic tool instructions.
-- `/context`: Time-stamped history logs, planning artifacts, and design notes so that project context is fully preserved when transferring files to any new development machine.
+> [!IMPORTANT]
+> **Loop Execution Mode**: When a user request implies bulk or repeat operations (e.g. *"Create 5 users"*), the system will dynamically compile it into loop execution steps. It supports both predefined YAML skills and custom dynamic API routes.
+>
+> **Dynamic Parameter Extraction**: The Planner LLM will interpret user queries and attempt to extract any inline values (e.g., names, emails) into a pre-populated parameter list.
+> 
+> **Unified Bulk Input Collection**: If details for any items in a loop are missing, the UI will display a premium, scrollable multi-card input container letting the user specify details for all loop items in a single submit operation.
+>
+> **One-Click Batch Authorization**: To prevent approval fatigue, write actions in loop mode will prompt the operator with a single unified confirmation screen showing all parameters of the batch execution before run.
+> 
+> **Chat Scrollability & Thought-Process Tracking**: Fixes the non-scrollable chat viewport height bugs. Displays glowing progress percentages for active loops, and expands the collapsible "Agent Mind Timeline" to expose the granular real-time cognitive reasoning of the agent.
 
 ---
 
-## Proposed System Architecture
+## Technical Specifications & LLM Schemas
 
-```mermaid
-graph TD
-    subgraph Frontend [Client UI - React + Vite]
-        A[Dashboard] --> B[Portal Configuration]
-        A --> C[Dynamic Chat Window]
-        C --> D[HITL Confirmation Modal]
-        C --> E[Dynamic JSON Form Widget]
-        C --> F[Bulk & Media Uploads]
-    end
+### 1. Loop Step Data Schema (`AgentState` & `ExecutionStep`)
+To support single-item and loop-based execution dynamically, the `ExecutionStep` model inside [state.py](file:///e:/2026/May/AI_Bot/backend/app/agents/state.py) will be extended with loop-tracking fields:
 
-    subgraph Backend [Web Server - FastAPI]
-        G[FastAPI App] <-->|WebSockets & REST| A
-        G --> H[API Compiler]
-        G --> I[Skill Manager]
-        
-        subgraph GraphRuntime [LangGraph Orchestrator]
-            J[Planner Node] -->|Generate Plan| K[Executor Node]
-            K -->|Mutating Action / Missing Data| L[HITL Interrupt]
-            L -->|Resume with Input| K
-            K -->|Execute Tools| M[Dynamic Local Tools]
-        end
-        
-        G <--> GraphRuntime
-        GraphRuntime <--> N[(Local SQLite DB)]
-        M <-->|Local Network Requests| O[Corporate Portals APIs]
-        GraphRuntime <--> P[Unified LLM Adapter: Gemini / Agent Builder / Ollama]
-    end
+```python
+class ExecutionStep(TypedDict):
+    step: int
+    id: str
+    description: str
+    action_type: str            # api_call, collect_input, manual_instruction
+    
+    # Executable properties
+    tool_name: Optional[str]
+    inputs: Optional[Dict[str, Any]]
+    requires_approval: Optional[bool]
+    
+    # NEW: Loop Orchestration Fields
+    execution_mode: str         # "single" or "loop"
+    loop_count: int             # Number of items to process (e.g., 5)
+    current_loop_index: int     # Current active iteration index (0-indexed)
+    parameter_list: List[Dict[str, Any]] # Array of parameters for each loop item
+    
+    # Input schemas
+    input_fields: Optional[List[Dict[str, Any]]]
+    message: Optional[str]
+    status: str                 # pending, running, completed, failed, interrupted
+```
 
-    classDef orange fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef blue fill:#bbf,stroke:#333,stroke-width:2px;
-    class Frontend blue;
-    class Backend orange;
+### 2. Planner LLM Output Schema & System Prompt
+When user queries contain quantities or lists (e.g., *"Create 5 users"*, *"Add 3 items"*), the Planner LLM will be instructed to structure the plan with loop steps.
+
+#### Output JSON Schema expected from LLM:
+```json
+{
+  "steps": [
+    {
+      "step": 1,
+      "id": "gather_users_details",
+      "description": "Gather email and role inputs for 5 users",
+      "action_type": "collect_input",
+      "execution_mode": "loop",
+      "loop_count": 5,
+      "input_fields": [
+        { "name": "email", "type": "string", "required": true, "description": "Corporate email address" },
+        { "name": "role", "type": "string", "required": true, "description": "System access role" }
+      ],
+      "parameter_list": []
+    },
+    {
+      "step": 2,
+      "id": "create_users_loop",
+      "description": "Call API to create 5 users in a batch",
+      "action_type": "api_call",
+      "tool_name": "create_user",
+      "execution_mode": "loop",
+      "loop_count": 5,
+      "inputs": {
+        "email": "{{email}}",
+        "role": "{{role}}"
+      },
+      "requires_approval": true,
+      "parameter_list": []
+    }
+  ]
+}
 ```
 
 ---
 
-## Proposed Schema Definitions
+## Proposed Changes
 
-### 1. Project Skill Schema (`project_skill.yaml`)
-This schema specifies the metadata, sequential steps, conditions, dynamic input requirements, and safety policies of a custom portal skill.
+### 1. Backend Core & State Machine
 
-```yaml
-id: create_user_workflow
-name: "Create Portal User with Team Assignment"
-description: "Sequential guidelines to register a user, verify their team, and perform role binding."
-version: "1.0.0"
+#### [MODIFY] [state.py](file:///e:/2026/May/AI_Bot/backend/app/agents/state.py)
+* Add `execution_mode`, `loop_count`, `current_loop_index`, and `parameter_list` properties to `ExecutionStep` TypedDict.
+* Add generic `bulk_data` list tracker support to store compiled bulk outputs.
 
-# High-level safety controls
-safety_policy:
-  require_confirmation_for_mutations: true
+#### [MODIFY] [planner.py](file:///e:/2026/May/AI_Bot/backend/app/agents/planner.py)
+* Enhance `plan_node` to parse the user's conversational text for bulk keywords (e.g., *"create 5..."*, *"add 3..."*, *"register 10..."*).
+* Update LLM planning fallback prompts to enforce structured loop definitions when bulk request is detected.
+* Instruct the LLM to pre-extract variables from the user's prompt (e.g. *"Create 2 users: user1@example.com (admin) and user2@example.com (user)"*) into the step's `parameter_list`.
+* Map pre-compiled matching YAML skill definitions into loop steps automatically if a loop count is detected.
 
-# The flow of steps that guides the Planner and Executor
-steps:
-  - step: 1
-    id: check_team_existence
-    description: "Check if the requested department/team exists."
-    action_type: "api_call"
-    tool_name: "get_team_by_name"
-    inputs:
-      name: "{{team_name}}"
-    on_failure:
-      action: "interrupt"
-      message: "The team '{{team_name}}' does not exist. Do you want to create it first?"
-
-  - step: 2
-    id: gather_user_parameters
-    description: "Collect user registration parameters from the operator."
-    action_type: "collect_input"
-    input_fields:
-      - name: "email"
-        type: "string"
-        required: true
-        description: "Corporate email address"
-      - name: "username"
-        type: "string"
-        required: true
-        description: "Unique system username"
-      - name: "role"
-        type: "string"
-        required: true
-        options: ["Administrator", "Developer", "Operator"]
-        description: "System permission role"
-
-  - step: 3
-    id: execute_user_creation
-    description: "Call the create user API tool with verified details."
-    action_type: "api_call"
-    tool_name: "create_portal_user"
-    inputs:
-      email: "{{email}}"
-      username: "{{username}}"
-      role: "{{role}}"
-    requires_approval: true # Force human-in-the-loop card
-```
-
-### 2. State & Messaging Schema
-To allow the UI to render rich, interactive components instead of raw text, the API messages will include a `type` payload:
-- `text`: Standard chat messages from the user or agent.
-- `status_update`: Execution status messages (e.g., "Step 1/3: Checking team existence...").
-- `form_request`: Form schemas (JSON schema) representing parameters the user needs to fill.
-- `hitl_request`: Confirmation cards containing the planned action details, destructive warnings, and Approve/Reject controls.
-- `progress_bar`: Progress counters for multi-step or bulk operations.
+#### [MODIFY] [executor.py](file:///e:/2026/May/AI_Bot/backend/app/agents/executor.py)
+* Rewrite `execute_node` to natively handle `execution_mode: "loop"` steps.
+* **Loop Parameter Collection (`collect_input`)**: 
+  - If `parameter_list` is empty or its length is less than `loop_count`, halt execution and trigger a `form_request` interrupt containing a loop flag.
+  - The UI will collect the values for *all* iterations in a single unified dashboard card.
+* **Loop Write Authorization (`api_call` + `requires_approval`)**:
+  - Halt execution and trigger a `hitl_request` payload. Instead of single confirmation, pass all items inside `parameter_list` for a single-click batch approval.
+* **Iterative Run Action**:
+  - Run a synchronous sequence over `parameter_list`.
+  - Dynamically set `step["current_loop_index"] = index` at each run.
+  - Push real-time step indices and cognitive thought logs (e.g. *"Loop 2/5 (40%): Creating user bob@test.com..."*) via WebSocket status streams.
+  - Keep REST execution fully generic by looking up routes dynamically from Swagger definitions.
 
 ---
 
-## Detailed Directory & File Structure
+### 2. Frontend Interface & UI Controls
 
-Here is the exact structure we will create in the `e:\2026\May\AI_Bot` workspace:
+#### [MODIFY] [ChatWindow.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/ChatWindow.jsx)
+* **Chat Container Heights & Scrollability Fix**: 
+  - Remove `height: '100%'` constraints from view tabs. Enable nested flex shrink (`min-height: 0`) and verify scroll container heights dynamically.
+  - Fix the conversation auto-scroll to snap smoothly to the absolute bottom when new messages arrive.
+* **Step Progress Checklist Badges**:
+  - If a step is in loop mode and in progress, render a glowing progress percentage bar: `Processing: 3 of 5 (60%)` inside an alabaster-gold badge.
+* **Collapsible Agent Mind Timeline**:
+  - Allow fully expanding the logs panel to render all chronological thought lines, rather than capping at the last 5.
 
-### 1. Backend (`/backend`)
-Contains the FastAPI server, LangGraph definition, database models, and the compilers for skills and Swagger docs.
+#### [MODIFY] [DynamicForm.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/DynamicForm.jsx)
+* Support `execution_mode: "loop"` interrupt forms.
+* When loop mode is active, render a beautiful card-slider or vertical tabbed sheet: "Item 1 of N", "Item 2 of N", etc. This allows entering details for all loop items collectively on a single screen and submitting once.
 
-* **[NEW] [requirements.txt](file:///e:/2026/May/AI_Bot/backend/requirements.txt)**: Core dependencies.
-  ```text
-  fastapi==0.110.0
-  uvicorn==0.28.0
-  langgraph==0.0.32
-  langchain==0.1.13
-  langchain-openai==0.1.1
-  langchain-google-genai==1.0.1
-  google-generativeai==0.4.0
-  pydantic==2.6.4
-  pyyaml==6.0.1
-  python-multipart==0.0.9
-  httpx==0.27.0
-  openpyxl==3.1.2
-  python-dotenv==1.0.1
-  ```
-* **[NEW] [main.py](file:///e:/2026/May/AI_Bot/backend/app/main.py)**: Initializes FastAPI, loads WebSocket endpoints for live chat streaming, and exposes REST endpoints for portal, Swagger, and skill uploads.
-* **[NEW] [config.py](file:///e:/2026/May/AI_Bot/backend/app/config.py)**: Holds environmental variables (e.g., LLM choice, credentials, uploads path).
-* **[NEW] [database.py](file:///e:/2026/May/AI_Bot/backend/app/database.py)**: Sets up SQLite tables to persist active configurations.
-* **[NEW] [api_compiler.py](file:///e:/2026/May/AI_Bot/backend/app/agents/api_compiler.py)**: Parses OpenAPI schemas, compiles tools, and dynamically tags state modifications.
-* **[NEW] [skill_manager.py](file:///e:/2026/May/AI_Bot/backend/app/agents/skill_manager.py)**: YAML compilation and lookup core.
-* **[NEW] [state.py](file:///e:/2026/May/AI_Bot/backend/app/agents/state.py)**: Dynamic LangGraph State structure.
-* **[NEW] [planner.py](file:///e:/2026/May/AI_Bot/backend/app/agents/planner.py)**: Master plan coordinator.
-* **[NEW] [executor.py](file:///e:/2026/May/AI_Bot/backend/app/agents/executor.py)**: Action runner with HITL hooks.
-* **[NEW] [graph.py](file:///e:/2026/May/AI_Bot/backend/app/agents/graph.py)**: Compiled LangGraph state machine.
-
-### 2. Frontend (`/frontend`)
-Contains the gorgeous, interactive dashboard UI designed to feel premium, featuring glassmorphism, tailored HSL color palettes, custom responsive CSS layouts, and live micro-animations.
-
-* **[NEW] [vite.config.js](file:///e:/2026/May/AI_Bot/frontend/vite.config.js)**: Configures Vite, alias paths, and proxy options.
-* **[NEW] [index.css](file:///e:/2026/May/AI_Bot/frontend/src/index.css)**: Implements the premium color tokens (sleek deep dark mode background, neon violet/cyan gradients, smooth transitions).
-* **[NEW] [App.jsx](file:///e:/2026/May/AI_Bot/frontend/src/App.jsx)**: Main dashboard page that hosts:
-  - **Portal Configuration Panel**: Quick portal switching, input fields for Swagger files, dynamic auth header fields, and YAML skills viewer.
-  - **Unified Chat Workspace**: Smooth scrollable messaging console.
-  - **Dynamic Interactive Overlay**: Slides out forms and confirmation cards when the agent interrupts the flow.
-* **[NEW] [DynamicForm.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/DynamicForm.jsx)**: A highly reusable form component that translates a JSON Schema (sent from Pydantic) into a premium UI form.
-* **[NEW] [ConfirmationCard.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/ConfirmationCard.jsx)**: Custom visual cards for HITL verification, detailing proposed request bodies, headers, path variables, and risk level, with "Approve" and "Cancel" buttons.
-* **[NEW] [FileUploader.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/FileUploader.jsx)**: A drag-and-drop element supporting bulk operation file uploads, rendering a tabular preview of parsed data for user verification.
+#### [MODIFY] [ConfirmationCard.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/ConfirmationCard.jsx)
+* Support loop mode batch visualizations.
+* Render parameters of all loop items in an elegant data grid, allowing the system operator to review the entire bulk execution before hitting **Authorize Action**.
 
 ---
 
-## Dynamic Flow & Human-in-the-Loop Sequence
+## Verification Plan
 
-The diagram below details the sequence of a typical flow where a user asks to perform a mutating action:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant UI as Frontend (React)
-    participant Server as FastAPI Server
-    participant Graph as LangGraph Orchestrator
-    participant Model as Unified LLM (Gemini / Agent Builder / Local)
-    participant API as Target Portal API
-
-    User->>UI: Type: "Create user dev-1@company.com"
-    UI->>Server: WebSocket: Send message + active Portal config
-    Server->>Graph: Initialize/Resume state with session ID
-    Graph->>Model: Query Plan (Check inputs & skill requirements)
-    Model->>Graph: Requires missing input ('username', 'role')
-    Graph->>Server: State interrupt: Form schema for email, username, role
-    Server->>UI: Send `form_request` packet
-    Note over UI: Renders interactive form with inputs
-    User->>UI: Fills form & clicks "Submit"
-    UI->>Server: WebSocket: Send completed form payload
-    Server->>Graph: Resume graph state with input variables
-    Graph->>Model: Generate execution plan with inputs
-    Model->>Graph: Plan: 1. Call `create_portal_user` API tool
-    Graph->>Server: State interrupt: HITL confirmation request (mutating action)
-    Server->>UI: Send `hitl_request` payload
-    Note over UI: Shows rich confirmation card with approve/cancel buttons
-    User->>UI: Clicks "Approve"
-    UI->>Server: WebSocket: Send approved event
-    Server->>Graph: Resume graph execution
-    Graph->>API: Execute HTTP call: POST /users with auth headers
-    API->>Graph: Returns 201 Created (User details)
-    Graph->>Server: Return final execution results
-    Server->>UI: Send final message & execution success log
-    Note over UI: Renders success status, updates active logs
-```
+### Automated / Browser-based Testing
+1. **Chat UI Scroll Test**:
+   * Flood the chat with numerous messages. Confirm the conversation panel scrolls naturally and snaps to bottom without overflowing or freezing page layout boundaries.
+2. **Loop Execution Test**:
+   * Query the chat: *"Create 5 users"*.
+   * Verify that the Execution Plan immediately compiles 2 steps, both marked as `LOOP MODE` with progress indicators `0 of 5`.
+   * Verify that the UI displays a beautiful dynamic form representing all 5 users.
+   * Fill in the data for all 5 users, hit Submit.
+   * Verify the Confirmation Card displays all 5 users in a clean grid for single-click batch approval.
+   * Click **Approve**.
+   * Observe the active plan stepper and Agent Mind Timeline stream live updates (e.g. *"Loop 1/5: User 'user1' created"* -> *"Loop 2/5..."*).
+   * Confirm the mock database lists all 5 users successfully.
 
 ---
 
-## Verification & Testing Plan
+## Open Questions
 
-To ensure the system works reliably completely offline and is highly reusable, we will implement the following verification mechanisms:
-
-### 1. Mock Portal Suite
-We will create a small mock HTTP API suite inside `/backend/mock_portal` (running on a secondary port e.g., `8081`). This mock suite will host a simple CRUD API for "Teams" and "Users", along with its own OpenAPI `swagger.json` document. This allows local, offline testing of:
-- Uploading a spec and generating dynamic client tools.
-- Single and bulk insertions.
-- Validating that headers (like bearer tokens) are passed correctly.
-
-### 2. Automated Backend Tests
-- Pytest scripts in `/backend/tests/` to verify:
-  1. OpenAPI parser extracts endpoints, path variables, query parameters, and bodies properly.
-  2. YAML compiler correctly reads and validates skill formats.
-  3. Dynamic tool invocations return structured outputs.
-  4. LangGraph interrupts correctly when mutation tools are executed or when required variables are absent.
-
-### 3. Manual UI Verification
-- Uploading custom `swagger.json` and a custom workflow YAML file.
-- Asking the chat to perform actions and verifying that forms and HITL cards slide in and behave responsively.
-- Performing a bulk operations test by uploading a custom CSV file to ensure data is parsed, verified, and mapped correctly to API tools.
-
----
-**Next Step**: Please review this architectural layout and provide your feedback. Once approved, we will immediately set up the backend framework and directory structure, implement the core schemas, and begin building the OpenAPI compiler and skill managers.
+> [!NOTE]
+> **Q1: Failure Strategy inside Loop Step Sequence**
+> If user 3 of 5 fails to compile or returns an API error, should the loop executor halt entirely (aborted plan) or skip/ignore the failure and proceed with the remaining users (4/5 and 5/5)? We propose a **Safe-Halt** policy as default, but we can make this configurable.
