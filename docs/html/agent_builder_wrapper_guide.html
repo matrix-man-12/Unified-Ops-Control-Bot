@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Builder LLM Wrapper Guide - Developer Spec</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header Navigation -->
+  <header class="doc-header">
+    <div class="container doc-header-nav">
+      <a href="index.html" class="logo-link">
+        <div class="logo-icon">⚡</div>
+        <span>Unified Portal Agent</span>
+      </a>
+      <nav>
+        <ul class="nav-links">
+          <li><a href="index.html">Home</a></li>
+          <li><a href="getting_started.html">Getting Started</a></li>
+          <li><a href="skills_guide.html">Skills Guide</a></li>
+          <li class="active"><a href="agent_builder_wrapper_guide.html">Agent Builder Wrapper</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Content Workspace -->
+  <div class="container main-wrapper">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="doc-sidebar">
+      <h4>Wrapper Reference</h4>
+      <ul>
+        <li><a href="#system-context">1. System Context</a></li>
+        <li><a href="#payload-contract">2. Payload Contract</a></li>
+        <li style="margin-left: 12px;"><a href="#req-schema">A. Request JSON</a></li>
+        <li style="margin-left: 12px;"><a href="#res-schema">B. Response JSON</a></li>
+        <li><a href="#llm-features">3. LLM Specifications</a></li>
+        <li style="margin-left: 12px;"><a href="#token-window">Token Windows</a></li>
+        <li style="margin-left: 12px;"><a href="#json-planner">JSON Planner Adherence</a></li>
+        <li style="margin-left: 12px;"><a href="#yaml-studio">YAML Skills Adherence</a></li>
+        <li><a href="#python-ref">4. Reference Python script</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Article content -->
+    <main class="doc-content">
+      <h1>Agent Builder LLM Wrapper Specification Guide</h1>
+      <p>This developer guide provides comprehensive technical specifications for building an OpenAI-compatible adapter/wrapper around your proprietary corporate <strong>Agent Builder LLM API</strong>. Exposing an OpenAI-compatible chat completion endpoint enables seamless, plug-and-play integration with the Unified Portal Control Agent workspace.</p>
+      
+      <hr>
+
+      <section id="system-context">
+        <h2>1. System Context &amp; Wrapper Routing Architecture</h2>
+        <p>Currently, the portal orchestrator instantiates LLM connectors dynamically using LangChain components. As defined in the codebase inside <a href="../../backend/app/agents/planner.py#L21" style="color: var(--color-gold); font-weight: 600;">planner.py</a>, selecting the <strong>Agent Builder API</strong> in the workspace triggers a standard LangChain <code>ChatOpenAI</code> call directed to the corporate endpoints:</p>
+        
+        <pre><code><span class="syntax-keyword">elif</span> prov == <span class="syntax-string">"agent_builder"</span>:
+    <span class="syntax-keyword">return</span> ChatOpenAI(
+        model=settings.AGENT_BUILDER_MODEL,
+        openai_api_key=settings.AGENT_BUILDER_API_KEY,
+        openai_api_base=settings.AGENT_BUILDER_BASE_URL,
+        temperature=<span class="syntax-number">0.0</span>
+    )</code></pre>
+
+        <p>Because the <code>ChatOpenAI</code> client automatically appends <code>/chat/completions</code> to the base url parameter, your internal wrapper proxy must listen on the exact REST route path: <code>http://&lt;adapter-host&gt;:&lt;port&gt;/chat/completions</code>.</p>
+
+        <div class="alert alert-info">
+          <strong>Architectural Flow:</strong>
+          <pre style="background: transparent; border: none; padding: 0; box-shadow: none; margin: 8px 0;"><code style="background: transparent; color: inherit; padding: 0; border: none;">+--------------------------------+
+|  Unified Portal Agent Backend  |
++--------------------------------+
+                |
+                | [LangChain ChatOpenAI requests]
+                | POST http://adapter-host:port/chat/completions
+                v
++--------------------------------+
+|   Corporate Wrapper Adapter    | &lt;--- Converts OpenAI spec models
++--------------------------------+
+                |
+                | [Proprietary schema conversions]
+                | POST https://corporate.internal.llm/api/v1/generate
+                v
++--------------------------------+
+|     Corporate LLM Service      |
++--------------------------------+</code></pre>
+        </div>
+      </section>
+
+      <section id="payload-contract">
+        <h2>2. OpenAI Request &amp; Response Payload Contract</h2>
+        <p>Your wrapper proxy must consume standard OpenAI payloads (which carry a structured array of system and user messages) and translate them into your proprietary corporate LLM format, which expects a single input key named <strong><code>input_value</code></strong>.</p>
+
+        <h3 id="req-schema">A. Proprietary Corporate API Request Schema (JSON)</h3>
+        <p>The internal Agent Builder API takes a simple JSON request containing a single key <code>input_value</code>, carrying the collated instruction prompt string:</p>
+        <pre><code>{
+  <span class="syntax-key">"input_value"</span>: <span class="syntax-string">"[SYSTEM]: System prompt instruction directives...\n[USER]: The user query and Swagger specifications context..."</span>
+}</code></pre>
+
+        <h3 id="res-schema">B. Wrapper Proxy Request Contract (JSON)</h3>
+        <p>The wrapper adapter itself exposes a standard OpenAI POST endpoint at <code>/chat/completions</code>:</p>
+        <pre><code>{
+  <span class="syntax-key">"model"</span>: <span class="syntax-string">"your-corporate-model-id"</span>,
+  <span class="syntax-key">"messages"</span>: [
+    {
+      <span class="syntax-key">"role"</span>: <span class="syntax-string">"system"</span>,
+      <span class="syntax-key">"content"</span>: <span class="syntax-string">"You are an expert planner..."</span>
+    },
+    {
+      <span class="syntax-key">"role"</span>: <span class="syntax-string">"user"</span>,
+      <span class="syntax-key">"content"</span>: <span class="syntax-string">"Create 5 users..."</span>
+    }
+  ],
+  <span class="syntax-key">"temperature"</span>: <span class="syntax-number">0.0</span>,
+  <span class="syntax-key">"max_tokens"</span>: <span class="syntax-number">4096</span>
+}</code></pre>
+
+        <h3 id="res-schema">B. Target API Response Contract (JSON)</h3>
+        <p>Your adapter must return the choices text wrapped in a standard OpenAI choice block:</p>
+        <pre><code>{
+  <span class="syntax-key">"id"</span>: <span class="syntax-string">"chatcmpl-uniqueId12345"</span>,
+  <span class="syntax-key">"object"</span>: <span class="syntax-string">"chat.completion"</span>,
+  <span class="syntax-key">"created"</span>: <span class="syntax-number">178229840</span>,
+  <span class="syntax-key">"model"</span>: <span class="syntax-string">"your-corporate-model-id"</span>,
+  <span class="syntax-key">"choices"</span>: [
+    {
+      <span class="syntax-key">"index"</span>: <span class="syntax-number">0</span>,
+      <span class="syntax-key">"message"</span>: {
+        <span class="syntax-key">"role"</span>: <span class="syntax-string">"assistant"</span>,
+        <span class="syntax-key">"content"</span>: <span class="syntax-string">"The generated string content (Raw JSON plan array or YAML skill)..."</span>
+      },
+      <span class="syntax-key">"finish_reason"</span>: <span class="syntax-string">"stop"</span>
+    }
+  ],
+  <span class="syntax-key">"usage"</span>: {
+    <span class="syntax-key">"prompt_tokens"</span>: <span class="syntax-number">1200</span>,
+    <span class="syntax-key">"completion_tokens"</span>: <span class="syntax-number">850</span>,
+    <span class="syntax-key">"total_tokens"</span>: <span class="syntax-number">2050</span>
+  }
+}</code></pre>
+      </section>
+
+      <section id="llm-features">
+        <h2>3. Required LLM Features &amp; Cognitive Capabilities</h2>
+        <p>To support the agent's advanced operational workflows, your internal LLM must satisfy three core features:</p>
+
+        <h3 id="token-window">1. Token Context Window: Min 16k (Ideally 32k+)</h3>
+        <p>The planner node bundles massive datasets into a single prompt. Your internal LLM context window must be large enough to hold:</p>
+        <ul>
+          <li><strong>OpenAPI Swagger Documentations</strong>: Containing routing paths, HTTP method rules, required parameters, and JSON payloads.</li>
+          <li><strong>Pre-defined Project Skills Context</strong>: A listing of currently registered YAML templates.</li>
+          <li><strong>Full Conversational history</strong>: Maintaining warm thread context.</li>
+        </ul>
+
+        <h3 id="json-planner">2. High-Fidelity JSON Schema Adherence (Planner Node)</h3>
+        <p>The Dynamic Planner node requires precise structure to feed the steppers UI checklist. The LLM must generate a syntax-perfect, un-truncated JSON array block wrapped in markdown fences:</p>
+        <pre><code>[
+  {
+    <span class="syntax-key">"step"</span>: <span class="syntax-number">1</span>,
+    <span class="syntax-key">"id"</span>: <span class="syntax-string">"gather_details"</span>,
+    <span class="syntax-key">"description"</span>: <span class="syntax-string">"Collect corporate email and username"</span>,
+    <span class="syntax-key">"action_type"</span>: <span class="syntax-string">"collect_input"</span>,
+    <span class="syntax-key">"tool_name"</span>: <span class="syntax-string">"create_user"</span>,
+    <span class="syntax-key">"path"</span>: <span class="syntax-string">"/users"</span>,
+    <span class="syntax-key">"method"</span>: <span class="syntax-string">"post"</span>,
+    <span class="syntax-key">"param_mappings"</span>: [
+      { <span class="syntax-key">"name"</span>: <span class="syntax-string">"email"</span>, <span class="syntax-key">"in"</span>: <span class="syntax-string">"body"</span> }
+    ],
+    <span class="syntax-key">"inputs"</span>: {
+      <span class="syntax-key">"email"</span>: <span class="syntax-string">"{{email}}"</span>
+    },
+    <span class="syntax-key">"requires_approval"</span>: <span class="syntax-value">false</span>,
+    <span class="syntax-key">"input_fields"</span>: [
+      {
+        <span class="syntax-key">"name"</span>: <span class="syntax-string">"email"</span>,
+        <span class="syntax-key">"type"</span>: <span class="syntax-string">"string"</span>,
+        <span class="syntax-key">"required"</span>: <span class="syntax-value">true</span>,
+        <span class="syntax-key">"description"</span>: <span class="syntax-string">"User corporate email"</span>
+      }
+    ]
+  }
+]</code></pre>
+
+        <h3 id="yaml-studio">3. Syntax-Perfect YAML Generation (Skill Generator Node)</h3>
+        <p>Under the "Skill Studio" view, developers can prompt the agent to draft custom skills automatically. Your LLM must output valid declarative YAML matching our parser parameters, supporting double curly-brace bindings (<code>{{variable_name}}</code>) and safety metrics.</p>
+      </section>
+
+      <section id="python-ref">
+        <h2>4. Reference Implementation: Python &amp; FastAPI Wrapper Adapter</h2>
+        <p>If you need to stand up a lightweight proxy adapter on your internal corporate network, you can run this <strong>FastAPI script</strong>. It listens for incoming standard OpenAI calls, translates payloads to your proprietary endpoints, and returns standard chat structures:</p>
+
+        <pre><code><span class="syntax-keyword">import</span> os
+<span class="syntax-keyword">import</span> httpx
+<span class="syntax-keyword">from</span> fastapi <span class="syntax-keyword">import</span> FastAPI, Header, HTTPException
+<span class="syntax-keyword">from</span> pydantic <span class="syntax-keyword">import</span> BaseModel
+<span class="syntax-keyword">from</span> typing <span class="syntax-keyword">import</span> List, Dict, Any, Optional
+
+app = FastAPI(title=<span class="syntax-string">"Corporate Agent Builder LLM Wrapper Proxy"</span>)
+
+CORPORATE_LLM_API_URL = os.getenv(<span class="syntax-string">"CORPORATE_LLM_API_URL"</span>, <span class="syntax-string">"https://api.internal.corp/llm/v1/generate"</span>)
+
+<span class="syntax-keyword">class</span> OpenAIMessage(BaseModel):
+    role: str
+    content: str
+
+<span class="syntax-keyword">class</span> OpenAICompletionRequest(BaseModel):
+    model: str
+    messages: List[OpenAIMessage]
+    temperature: Optional[float] = <span class="syntax-number">0.0</span>
+    max_tokens: Optional[int] = <span class="syntax-number">4096</span>
+
+@app.post(<span class="syntax-string">"/chat/completions"</span>)
+<span class="syntax-keyword">async def</span> chat_completions(
+    request: OpenAICompletionRequest,
+    authorization: Optional[str] = Header(None)
+):
+    <span class="syntax-keyword">if not</span> authorization:
+        <span class="syntax-keyword">raise</span> HTTPException(status_code=<span class="syntax-number">401</span>, detail=<span class="syntax-string">"Missing Authorization headers."</span>)
+    
+    <span class="syntax-comment"># Translate messages list into a prompt format suited for corporate LLMs</span>
+    combined_prompt = <span class="syntax-string">""</span>
+    system_instruction = <span class="syntax-string">""</span>
+    <span class="syntax-keyword">for</span> msg <span class="syntax-keyword">in</span> request.messages:
+        <span class="syntax-keyword">if</span> msg.role == <span class="syntax-string">"system"</span>:
+            system_instruction = msg.content
+        <span class="syntax-keyword">else</span>:
+            combined_prompt += f<span class="syntax-string">"\n[{msg.role.upper()}]: {msg.content}"</span>
+
+    <span class="syntax-comment"># Collate system instructions and user chat loops into a single input_value string</span>
+    collated_prompt = f"[SYSTEM]: {system_instruction}\n{combined_prompt}"
+
+    corporate_payload = {
+        <span class="syntax-key">"input_value"</span>: collated_prompt
+    }
+
+    corporate_headers = {
+        <span class="syntax-key">"X-Corp-Auth"</span>: authorization.replace(<span class="syntax-string">"Bearer "</span>, <span class="syntax-string">""</span>),
+        <span class="syntax-key">"Content-Type"</span>: <span class="syntax-string">"application/json"</span>
+    }
+
+    <span class="syntax-keyword">async with</span> httpx.AsyncClient() <span class="syntax-keyword">as</span> client:
+        corp_res = <span class="syntax-keyword">await</span> client.post(
+            CORPORATE_LLM_API_URL,
+            json=corporate_payload,
+            headers=corporate_headers,
+            timeout=<span class="syntax-number">60.0</span>
+        )
+        corp_data = corp_res.json()
+
+    <span class="syntax-comment"># Map corporate output keys back to OpenAI models (e.g. output_value or generation_text)</span>
+    generated_text = corp_data.get(<span class="syntax-string">"output_value"</span>) or corp_data.get(<span class="syntax-string">"generation_text"</span>, <span class="syntax-string">""</span>) or str(corp_data)
+    
+    <span class="syntax-keyword">return</span> {
+        <span class="syntax-key">"id"</span>: <span class="syntax-string">"chatcmpl-corp-"</span> + os.urandom(<span class="syntax-number">8</span>).hex(),
+        <span class="syntax-key">"object"</span>: <span class="syntax-string">"chat.completion"</span>,
+        <span class="syntax-key">"created"</span>: <span class="syntax-number">178229840</span>,
+        <span class="syntax-key">"model"</span>: request.model,
+        <span class="syntax-key">"choices"</span>: [
+            {
+                <span class="syntax-key">"index"</span>: <span class="syntax-number">0</span>,
+                <span class="syntax-key">"message"</span>: {
+                    <span class="syntax-key">"role"</span>: <span class="syntax-string">"assistant"</span>,
+                    <span class="syntax-key">"content"</span>: generated_text
+                },
+                <span class="syntax-key">"finish_reason"</span>: <span class="syntax-string">"stop"</span>
+            }
+        ],
+        <span class="syntax-key">"usage"</span>: {
+            <span class="syntax-key">"prompt_tokens"</span>: <span class="syntax-number">1000</span>,
+            <span class="syntax-key">"completion_tokens"</span>: <span class="syntax-number">800</span>,
+            <span class="syntax-key">"total_tokens"</span>: <span class="syntax-number">1800</span>
+        }
+    }</code></pre>
+      </section>
+    </main>
+
+  </div>
+
+  <!-- Footer -->
+  <footer class="doc-footer">
+    <div class="container">
+      <p>&copy; 2026 Unified Portal Control Agent. All rights reserved.</p>
+      <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 8px;">Premium aesthetic documentation styled for operational excellence.</p>
+    </div>
+  </footer>
+
+</body>
+</html>
