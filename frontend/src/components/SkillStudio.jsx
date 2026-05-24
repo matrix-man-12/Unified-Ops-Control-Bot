@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, Save, X, Code, Eye, FileCode, CheckCircle, AlertTriangle, Play, HelpCircle, Paperclip } from 'lucide-react';
+import { Sparkles, Save, X, Code, FileCode, CheckCircle, AlertTriangle, HelpCircle, Paperclip } from 'lucide-react';
 
 export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess }) {
   const [yamlContent, setYamlContent] = useState('');
@@ -55,7 +55,7 @@ export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess })
     setUploadState('idle');
   };
 
-  // Initialize editor
+  // Initialize editor content
   useEffect(() => {
     if (skill) {
       setYamlContent(skill.yaml_content || '');
@@ -147,38 +147,6 @@ steps:
     setValidationStatus({ valid: true, message: 'YAML syntax looks good.' });
   }, [yamlContent]);
 
-  // Parse steps for Visual Preview list
-  const parseSteps = () => {
-    try {
-      const steps = [];
-      // Safe extraction of steps
-      const stepBlocks = yamlContent.split(/-\s+step:\s*/g);
-      for (let i = 1; i < stepBlocks.length; i++) {
-        const block = stepBlocks[i];
-        const stepNumMatch = block.match(/^(\d+)/m);
-        const idMatch = block.match(/id:\s*([^\s\n#]+)/m);
-        const descMatch = block.match(/description:\s*["']?([^"'\n#]+)["']?/m);
-        const actionMatch = block.match(/action_type:\s*([^\s\n#]+)/m);
-        const toolMatch = block.match(/tool_name:\s*([^\s\n#]+)/m);
-        const approvalMatch = block.match(/requires_approval:\s*([^\s\n#]+)/m);
-
-        steps.push({
-          step: stepNumMatch ? stepNumMatch[1] : i,
-          id: idMatch ? idMatch[1] : 'unknown',
-          description: descMatch ? descMatch[1].trim() : 'No description',
-          action_type: actionMatch ? actionMatch[1].trim() : 'api_call',
-          tool_name: toolMatch ? toolMatch[1].trim() : null,
-          requires_approval: approvalMatch ? approvalMatch[1].trim() === 'true' : false
-        });
-      }
-      return steps;
-    } catch (err) {
-      return [];
-    }
-  };
-
-  const stepsList = parseSteps();
-
   // Ask LLM Agent to Draft or Refine Skill (NL integration)
   const handleAgentDraftRefine = async () => {
     if (!prompt.trim()) return;
@@ -248,8 +216,8 @@ steps:
     <div className="glass-panel animate-fade-in" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'rgba(253, 251, 247, 0.95)', border: '1px solid var(--border-neon)', borderRadius: '16px', overflow: 'hidden' }}>
       
       {/* Studio Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderBottom: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)' }}>
-        <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifycontent: 'space-between', padding: '16px 24px', borderBottom: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)', flexShrink: 0 }}>
+        <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <FileCode size={20} style={{ color: 'var(--color-secondary)' }} />
             <h2 style={{ fontSize: '18px', fontWeight: '700', letterSpacing: '-0.02em', color: 'var(--color-secondary)' }}>
@@ -275,31 +243,52 @@ steps:
       </div>
 
       {/* Split Workstation Pane */}
-      <div style={{ flex: '1', display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: '1', display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         
-        {/* LEFT WORKSPACE: Agent Prompt & Visual Workflow Pipeline */}
-        <div style={{ flex: '1.2', borderRight: '1px solid var(--border-neon)', padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', background: 'var(--color-bg-light)' }}>
+        {/* LEFT WORKSPACE: Agent Prompt Expanded Workspace (Takes entire left height/space) */}
+        <div style={{ flex: '1', borderRight: '1px solid var(--border-neon)', padding: '24px', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-light)', overflowY: 'auto' }}>
           
-          {/* Agent Refinement Card */}
-          <div className="glass-panel" style={{ padding: '16px', background: 'rgba(255, 255, 255, 0.7)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Sparkles size={16} style={{ color: 'var(--color-primary)' }} />
-              <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--text-primary)' }}>
+          <div 
+            className="glass-panel" 
+            style={{ 
+              padding: '24px', 
+              background: '#ffffff', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '16px',
+              height: '100%',
+              minHeight: '450px',
+              boxShadow: 'var(--shadow-sm)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Sparkles size={18} style={{ color: 'var(--color-primary)' }} />
+              <h4 style={{ fontSize: '14px', fontWeight: '800', color: 'var(--text-primary)', fontFamily: 'var(--font-header)' }}>
                 {skill ? 'Refine Skill with Agent' : 'Generate Runbook from Scratch'}
               </h4>
             </div>
             
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '-4px' }}>
-              Explain what you want to add or modify in plain English. The agent will read your current YAML code below and apply your changes.
+            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '1.5', marginTop: '-4px' }}>
+              Explain what you want to add, remove, or modify in plain English. The agent will read your prompt alongside the active portal Swagger parameters to compile a valid YAML runbook inside the editor pane.
             </p>
 
-            <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {/* Expanded Big prompt input section */}
+            <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <textarea 
                 className="form-input"
                 value={prompt}
                 onChange={e => setPrompt(e.target.value)}
                 placeholder={skill ? "e.g., 'Add a third step that triggers perform_user_sync and make step 2 require manual approval...'" : "e.g., 'First collect the corporate username, verify if they exist, then call create_user endpoint with HITL confirmation...'"}
-                style={{ height: '90px', fontSize: '12px', resize: 'none', background: 'rgba(255,255,255,0.9)', paddingBottom: '30px', lineHeight: '1.5' }}
+                style={{ 
+                  flex: 1,
+                  fontSize: '13px', 
+                  resize: 'none', 
+                  background: 'rgba(0,0,0,0.01)', 
+                  paddingBottom: '40px', 
+                  lineHeight: '1.6',
+                  fontFamily: 'var(--font-sans)',
+                  border: '1px solid var(--border-neon)'
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -316,23 +305,23 @@ steps:
                 accept=".csv,.xlsx,.xls,.json,.txt,.yaml,.yml" 
               />
               
-              <div style={{ position: 'absolute', bottom: '8px', left: '12px', right: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
+              <div style={{ position: 'absolute', bottom: '12px', left: '16px', right: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
                 <button 
                   type="button" 
                   onClick={() => fileInputRef.current.click()} 
                   disabled={uploadState === 'uploading'}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', padding: '2px 4px', borderRadius: '4px' }}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', padding: '4px 8px', borderRadius: '6px', fontWeight: '600' }}
                   className="hover-accent"
                   title="Attach Spec or Rules file"
                 >
-                  <Paperclip size={12} style={{ color: 'var(--color-primary)' }} />
+                  <Paperclip size={13} style={{ color: 'var(--color-primary)' }} />
                   <span>{uploadState === 'uploading' ? 'Uploading...' : 'Attach Spec/Rules'}</span>
                 </button>
                 
                 {uploadedFileName && (
-                  <span style={{ fontSize: '10px', background: 'rgba(179,139,77,0.1)', color: 'var(--color-primary)', padding: '1px 6px', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '2px', marginLeft: 'auto' }}>
-                    📎 {uploadedFileName.length > 15 ? uploadedFileName.substring(0,12) + '...' : uploadedFileName}
-                    <b onClick={clearAttachment} style={{ cursor: 'pointer', color: 'var(--color-accent)', paddingLeft: '2px' }}>×</b>
+                  <span style={{ fontSize: '11px', background: 'rgba(168,95,26,0.08)', color: 'var(--color-primary)', border: '1px solid rgba(168,95,26,0.15)', padding: '3px 10px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '4px', marginLeft: 'auto', fontWeight: '600' }}>
+                    📎 {uploadedFileName.length > 20 ? uploadedFileName.substring(0,17) + '...' : uploadedFileName}
+                    <b onClick={clearAttachment} style={{ cursor: 'pointer', color: 'var(--color-accent)', paddingLeft: '4px' }}>×</b>
                   </span>
                 )}
               </div>
@@ -342,100 +331,40 @@ steps:
               onClick={handleAgentDraftRefine}
               disabled={isProcessing || !prompt.trim()}
               className="btn-gradient"
-              style={{ padding: '10px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }}
+              style={{ padding: '12px', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexShrink: 0 }}
             >
-              <Sparkles size={14} />
-              {isProcessing ? 'Agent is thinking...' : (skill ? 'Refine YAML Draft' : 'Draft New Runbook')}
+              <Sparkles size={15} />
+              {isProcessing ? 'Agent is translating specs...' : (skill ? 'Refine Skill YAML' : 'Generate YAML Skill Runbook')}
             </button>
           </div>
 
-          {/* Visual Runbook Card Pipeline */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h4 style={{ fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-secondary)' }}>
-                Live Runbook Flow Preview
-              </h4>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{stepsList.length} Steps Found</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '8px', position: 'relative' }}>
-              {/* Line linking steps */}
-              {stepsList.length > 1 && (
-                <div style={{ position: 'absolute', top: '24px', bottom: '24px', left: '26px', width: '2px', background: 'rgba(179,139,77,0.15)', zIndex: 1 }} />
-              )}
-
-              {stepsList.map((st, index) => (
-                <div 
-                  key={st.step} 
-                  className="glass-panel animate-fade-in" 
-                  style={{ display: 'flex', gap: '12px', padding: '12px 16px', background: '#fff', position: 'relative', zIndex: 2, borderLeft: '4px solid var(--color-primary)' }}
-                >
-                  {/* Step Number Circle */}
-                  <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-bg-paper)', border: '1px solid var(--color-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: '700', color: 'var(--color-primary)' }}>
-                    {st.step}
-                  </div>
-                  
-                  {/* Step Info */}
-                  <div style={{ flex: '1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontWeight: '600', fontSize: '13px', color: 'var(--text-primary)' }}>{st.id}</span>
-                      <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: st.action_type === 'api_call' ? 'rgba(179,139,77,0.1)' : 'rgba(0,0,0,0.03)', color: st.action_type === 'api_call' ? 'var(--color-primary)' : 'var(--text-secondary)' }}>
-                        {st.action_type}
-                      </span>
-                      {st.requires_approval && (
-                        <span style={{ fontSize: '9px', padding: '1px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.08)', color: '#ef4444', fontWeight: '500' }}>
-                          🔒 Security HITL
-                        </span>
-                      )}
-                    </div>
-                    
-                    <p style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{st.description}</p>
-                    
-                    {st.action_type === 'api_call' && st.tool_name && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '2px' }}>
-                        <Play size={10} /> Tool operation: <strong style={{ color: 'var(--color-primary)' }}>{st.tool_name}</strong>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-
-              {stepsList.length === 0 && (
-                <div style={{ padding: '24px', textAlign: 'center', border: '1px dashed var(--border-neon)', borderRadius: '12px', background: 'rgba(0,0,0,0.01)' }}>
-                  <HelpCircle size={24} style={{ color: 'var(--text-muted)', margin: '0 auto 8px auto' }} />
-                  <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No steps parsed yet. Type or generate YAML code.</span>
-                </div>
-              )}
-            </div>
-          </div>
-
         </div>
-
+ 
         {/* RIGHT WORKSPACE: YAML Raw Code Editor */}
-        <div style={{ flex: '1', display: 'flex', flexDirection: 'column', background: '#faf9f6' }}>
+        <div style={{ flex: '1', display: 'flex', flexDirection: 'column', background: '#ffffff' }}>
           
           {/* Editor Header Status Bar */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)', flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Code size={14} style={{ color: 'var(--text-secondary)' }} />
-              <span style={{ fontSize: '11px', fontWeight: '600', color: 'var(--text-secondary)' }}>
-                YAML Code Editor (Interactive overrides allowed)
+              <span style={{ fontSize: '11px', fontWeight: '700', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                YAML Code Editor
               </span>
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px' }}>
               {validationStatus.valid ? (
-                <span style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ color: 'var(--color-success)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
                   <CheckCircle size={12} /> {validationStatus.message}
                 </span>
               ) : (
-                <span style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '500' }}>
+                <span style={{ color: 'var(--color-error)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: '600' }}>
                   <AlertTriangle size={12} /> {validationStatus.message}
                 </span>
               )}
             </div>
           </div>
-
+ 
           {/* Text Area Code Editor */}
           <textarea 
             className="form-input"
@@ -450,16 +379,16 @@ steps:
               padding: '20px',
               border: 'none',
               background: '#fff',
-              color: '#3f3f3f',
+              color: 'var(--text-primary)',
               resize: 'none',
               outline: 'none',
               borderRadius: '0'
             }}
-            placeholder="# Paste your runbook skill YAML here..."
+            placeholder="# Paste or generate your runbook skill YAML here..."
           />
-
-          {/* Register compile triggers footer */}
-          <div style={{ padding: '16px', borderTop: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+ 
+          {/* Compile triggers footer */}
+          <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>
             <button 
               type="button" 
               onClick={onClose} 
@@ -476,15 +405,15 @@ steps:
               style={{ padding: '10px 24px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}
             >
               <Save size={14} />
-              {isProcessing ? 'Registering...' : 'Compile & Save Runbook'}
+              {isProcessing ? 'Compiling...' : 'Save & Register Skill'}
             </button>
           </div>
-
+ 
         </div>
-
+ 
       </div>
-
-      {/* Premium custom alert/validation Modal */}
+ 
+      {/* Custom alert/validation Modal */}
       {modal.show && (
         <div style={{
           position: 'fixed',
@@ -514,11 +443,11 @@ steps:
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               {modal.type === 'error' ? (
-                <div style={{ padding: '6px', background: 'rgba(225, 29, 72, 0.08)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ padding: '6px', background: 'rgba(225, 29, 72, 0.08)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifycontent: 'center' }}>
                   <AlertTriangle size={20} style={{ color: 'var(--color-error)' }} />
                 </div>
               ) : (
-                <div style={{ padding: '6px', background: 'rgba(13, 148, 136, 0.08)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ padding: '6px', background: 'rgba(13, 148, 136, 0.08)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifycontent: 'center' }}>
                   <CheckCircle size={20} style={{ color: 'var(--color-success)' }} />
                 </div>
               )}
@@ -542,7 +471,7 @@ steps:
             }} className="custom-scrollbar">
               {modal.message}
             </div>
-
+ 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
               <button 
                 onClick={() => {
@@ -567,7 +496,7 @@ steps:
           </div>
         </div>
       )}
-
+ 
     </div>
   );
 }
