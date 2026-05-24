@@ -40,6 +40,7 @@
         <li style="margin-left: 12px;"><a href="#step-b">B: Teach Skill</a></li>
         <li style="margin-left: 12px;"><a href="#step-c">C: HITL Execution</a></li>
         <li><a href="#loops">5. Batch & Loop Runs</a></li>
+        <li><a href="#architecture">6. System Architecture &amp; Flows</a></li>
       </ul>
     </aside>
 
@@ -205,6 +206,110 @@
             </ul>
           </li>
         </ol>
+      </section>
+
+      <section id="architecture">
+        <h2>6. System Architecture &amp; Communication Flows</h2>
+        <p>This section details the underlying architectural layers, end-to-end communication protocols, and SQLite database schema that power the Unified Portal Control Agent.</p>
+        
+        <h3>System Architecture Overview</h3>
+        <p>The orchestrator is built as a three-tier system: React Frontend Client, FastAPI Backend coordinating with the LangGraph state machine, and a pluggable LLM Orchestration Layer.</p>
+
+        <pre><code>+-----------------------------------------------------------------------+
+|                         REACT FRONTEND CLIENT                         |
+|  +--------------------+  +---------------------+  +----------------+  |
+|  | Portal Config      |  | Skill YAML Designer |  | Chat Workspace |  |
+|  +--------------------+  +---------------------+  +----------------+  |
++------------------------------------|----------------------------------+
+                                     | (REST HTTP / WebSockets)
+                                     v
++-----------------------------------------------------------------------+
+|                         FASTAPI BACKEND SERVICE                       |
+|  +--------------------+  +---------------------+  +----------------+  |
+|  | REST API Endpoints |  | WebSocket Gateway   |  | SQLite DB      |  |
+|  +--------------------+  +---------------------+  +----------------+  |
+|                                    | (State sync)                     |
+|                                    v                                  |
+|                 +--------------------------------------+              |
+|                 |    LANGGRAPH STATE MACHINE ENGINE    |              |
+|                 |  +---------------+    +-----------+  |              |
+|                 |  | Planner Node  | -> | Executor  |  |              |
+|                 |  +---------------+    +-----------+  |              |
+|                 +--------------------------------------+              |
++------------------------------------|----------------------------------+
+                                     | (API Routing & Planning)
+                                     v
++-----------------------------------------------------------------------+
+|                        LLM ORCHESTRATION LAYER                        |
+|  +--------------------+  +---------------------+  +----------------+  |
+|  | Gemini 1.5 Flash   |  | Local LLM (Ollama)  |  | Agent Builder  |  |
+|  +--------------------+  +---------------------+  +----------------+  |
++-----------------------------------------------------------------------+</code></pre>
+
+        <h3>End-to-End Communication Protocols</h3>
+        
+        <h4>A. Bidirectional WebSocket Protocol</h4>
+        <p>All core state synchronization, chat interactions, dynamic forms delivery, and operator approvals are routed through a real-time WebSocket connection at <code>/ws/chat</code>.</p>
+        
+        <div class="alert alert-info">
+          <strong>WebSocket Lifecycle &amp; Message Flows:</strong>
+          <ul>
+            <li><strong>Initial Handshake &amp; Restoration:</strong> Upon connection, the frontend sends a <code>"restore"</code> request. The backend retrieves past conversations and audit logs from the SQLite store and replies with a <code>"restore"</code> payload containing message lists and checklist state.</li>
+            <li><strong>Interactive User Query:</strong> Sending a <code>"chat"</code> command triggers the LLM Planner node to construct a step plan, streaming progress updates back as <code>"logs"</code> event sequences.</li>
+            <li><strong>Dynamic Parameter Pauses:</strong> If a step requires user input (e.g. <code>collect_input</code>), the graph yields an <code>"interrupt"</code> event carrying form metadata. The frontend renders this inside the chat and responds with a <code>"form_submit"</code> payload to resume the graph.</li>
+            <li><strong>HITL Security Cards:</strong> Write API mutations trigger an authorization overlay on the client, returning a <code>"hitl_response"</code> event to either authorize or reject state mutations.</li>
+          </ul>
+        </div>
+
+        <h4>B. REST API Interfaces</h4>
+        <p>REST services are used for bulk uploads, portal registration, session management, and automated skill drafting:</p>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 25%;">Endpoint</th>
+              <th style="width: 15%;">HTTP Method</th>
+              <th>Operational Function</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>/api/portals</code></td>
+              <td><span class="syntax-keyword">POST</span>, <span class="syntax-key">GET</span></td>
+              <td>Registers a portal nickname, base URL, dynamic headers, and parsed Swagger documents.</td>
+            </tr>
+            <tr>
+              <td><code>/api/skills</code></td>
+              <td><span class="syntax-keyword">POST</span>, <span class="syntax-key">GET</span></td>
+              <td>Compiles and lists declarative YAML skills associated with a portal profile.</td>
+            </tr>
+            <tr>
+              <td><code>/api/skills/generate</code></td>
+              <td><span class="syntax-keyword">POST</span></td>
+              <td>Invokes the LLM to write a syntactically valid YAML skill from developer prompt &amp; spec.</td>
+            </tr>
+            <tr>
+              <td><code>/api/upload</code></td>
+              <td><span class="syntax-keyword">POST</span></td>
+              <td>Accepts document streams (CSV/JSON/XLSX) and returns paths to run batch loop iterations.</td>
+            </tr>
+            <tr>
+              <td><code>/api/sessions</code></td>
+              <td><span class="syntax-keyword">POST</span>, <span class="syntax-key">GET</span>, <span class="syntax-keyword">DELETE</span></td>
+              <td>Manages operational thread persistence, titles, and SQLite database sessions.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Database Architecture &amp; SQLite Schema</h3>
+        <p>Relational tables in <code>app/storage/portal_agent.db</code> map variables, sessions, and histories, enabling real-time compliance audits:</p>
+        
+        <ul>
+          <li><strong><code>portals</code></strong>: Primary configuration key, containing Display Names, Base target URLs, and request headers serialized as JSON.</li>
+          <li><strong><code>skills</code></strong>: Declarative YAML skill files registered by portals (enforces cascading deletion upon portal removal).</li>
+          <li><strong><code>sessions</code></strong>: Holds distinct chat runs linked to active portals.</li>
+          <li><strong><code>session_messages</code></strong>: Persists conversations, categorizing them by sender (<code>user</code>/<code>agent</code>) to enable warm restarts.</li>
+          <li><strong><code>session_audit_logs</code></strong>: Saves comprehensive step checklists, timestamps, and executor notes, feeding the <strong>⚡ Agent Mind Timeline</strong>.</li>
+        </ul>
       </section>
     </main>
 

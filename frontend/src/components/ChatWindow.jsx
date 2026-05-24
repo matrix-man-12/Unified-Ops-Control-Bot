@@ -480,7 +480,7 @@ export default function ChatWindow({
                     </div>
                   )}
                 </div>
-              ))}
+              )))}
               {/* Collapsible Chronological Agent Mind Timeline */}
               {statusLogs.length > 0 && isConnected && (
                 <div 
