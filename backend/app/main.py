@@ -32,6 +32,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve documentation suite statically at /documentation
+from fastapi.staticfiles import StaticFiles
+DOCS_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "docs", "html"))
+if os.path.exists(DOCS_PATH):
+    app.mount("/documentation", StaticFiles(directory=DOCS_PATH), name="docs")
+
 # Startup database provisioning
 @app.on_event("startup")
 def on_startup():

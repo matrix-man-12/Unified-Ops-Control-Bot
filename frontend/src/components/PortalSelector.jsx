@@ -834,6 +834,65 @@ export default function PortalSelector({
         )}
 
       </div>
+
+      {/* 2. Persistent Documentation Footer Section */}
+      <div 
+        style={{ 
+          borderTop: '1px solid var(--border-neon)', 
+          paddingTop: '14px', 
+          marginTop: 'auto', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          gap: '10px',
+          flexShrink: 0
+        }}
+      >
+        <a 
+          href="http://127.0.0.1:8000/documentation/index.html" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '10px', 
+            padding: '12px', 
+            background: 'linear-gradient(135deg, rgba(179,139,77,0.06), rgba(255,255,255,0.25))', 
+            border: '1px solid rgba(179, 139, 77, 0.25)', 
+            borderRadius: '12px',
+            textDecoration: 'none',
+            color: 'var(--text-primary)',
+            transition: 'all 0.25s ease',
+            boxShadow: '0 4px 10px rgba(179, 139, 77, 0.03)'
+          }}
+          className="hover-neon-border"
+          title="Open interactive operational reference library"
+        >
+          <div style={{ 
+            width: '32px', 
+            height: '32px', 
+            borderRadius: '8px', 
+            background: 'var(--color-primary-light)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            color: 'var(--color-primary)',
+            border: '1px solid rgba(179,139,77,0.15)',
+            flexShrink: 0
+          }}>
+            <BookOpen size={16} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <span style={{ fontSize: '12px', fontWeight: '700', letterSpacing: '-0.01em', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              📚 System Docs 
+              <span style={{ fontSize: '9px', background: 'var(--color-primary-light)', color: 'var(--color-primary)', padding: '1px 5px', borderRadius: '4px', fontWeight: '600' }}>Library</span>
+            </span>
+            <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              YAML runbooks & APIs specs
+            </span>
+          </div>
+        </a>
+      </div>
+
     </div>
   );
 }

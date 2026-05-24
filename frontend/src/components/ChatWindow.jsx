@@ -4,6 +4,36 @@ import DynamicForm from './DynamicForm';
 import ConfirmationCard from './ConfirmationCard';
 import PlanVerificationCard from './PlanVerificationCard';
 
+const parseLogDetails = (log) => {
+  const lower = log.toLowerCase();
+  let prefix = "⚙️ [SYSTEM]";
+  let color = "var(--text-secondary)";
+  let bg = "transparent";
+
+  if (lower.includes("analyzing") || lower.includes("planning") || lower.includes("llm planner") || lower.includes("initializing")) {
+    prefix = "🧠 [PLANNER]";
+    color = "#8c6e33"; // Goldish/ochre obsidian
+    bg = "rgba(179,139,77,0.04)";
+  } else if (lower.includes("executing") || lower.includes("calling") || lower.includes("http") || lower.includes("rest") || lower.includes("api")) {
+    prefix = "📡 [NETWORK]";
+    color = "#1e6091";
+    bg = "rgba(30,96,145,0.04)";
+  } else if (lower.includes("failed") || lower.includes("error") || lower.includes("rejected") || lower.includes("cancelled")) {
+    prefix = "❌ [FAILURE]";
+    color = "#b91c1c";
+    bg = "rgba(185,28,28,0.04)";
+  } else if (lower.includes("success") || lower.includes("completed") || lower.includes("passed")) {
+    prefix = "✅ [SUCCESS]";
+    color = "#15803d";
+    bg = "rgba(21,128,61,0.04)";
+  } else if (lower.includes("halted") || lower.includes("interrupted") || lower.includes("authorization") || lower.includes("approved")) {
+    prefix = "🛡️ [GATEWAY]";
+    color = "#b45309";
+    bg = "rgba(180,83,9,0.04)";
+  }
+
+  return { prefix, color, bg };
+};
 
 export default function ChatWindow({ 
   messages, 
@@ -203,8 +233,34 @@ export default function ChatWindow({
           </button>
         </div>
 
-        {/* Server Gateway State & New Chat shortcut Button */}
+        {/* Server Gateway State, Docs Link & New Chat shortcut Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <a
+            href="http://127.0.0.1:8000/documentation/index.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 12px',
+              fontSize: '12px',
+              fontWeight: '600',
+              background: 'linear-gradient(135deg, #ffffff, #f7f5ef)',
+              border: '1px solid var(--border-neon)',
+              borderRadius: '8px',
+              color: 'var(--color-primary-hover)',
+              cursor: 'pointer',
+              textDecoration: 'none',
+              transition: 'all 0.2s',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.02)'
+            }}
+            className="hover-accent"
+            title="Open visual documentation in a new tab"
+          >
+            <span>📚 Help &amp; Docs</span>
+          </a>
+
           <button
             onClick={onCreateSession}
             disabled={!activePortalId}
@@ -248,8 +304,147 @@ export default function ChatWindow({
             
             {/* Scrollable Conversation Loop */}
             <div style={{ flex: '1', overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px', background: 'rgba(255,255,255,0.15)' }}>
-              {messages.map((m, i) => (
+              {messages.length === 0 ? (
                 <div 
+                  className="animate-fade-in"
+                  style={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    padding: '40px 24px', 
+                    textAlign: 'center', 
+                    maxWidth: '800px', 
+                    margin: 'auto',
+                    gap: '24px'
+                  }}
+                >
+                  <div style={{ 
+                    width: '64px', 
+                    height: '64px', 
+                    borderRadius: '16px', 
+                    background: 'linear-gradient(135deg, var(--color-primary-light), rgba(179,139,77,0.2))', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    boxShadow: '0 8px 24px -4px rgba(179,139,77,0.25)',
+                    border: '1px solid rgba(179,139,77,0.2)',
+                    animation: 'pulse 2s infinite ease-in-out'
+                  }}>
+                    <Bot size={32} style={{ color: 'var(--color-primary)' }} />
+                  </div>
+                  
+                  <div>
+                    <h2 style={{ fontSize: '24px', fontWeight: '800', letterSpacing: '-0.02em', color: 'var(--color-primary)' }}>
+                      ⚡ Unified Control &amp; Planning Harness
+                    </h2>
+                    <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', marginTop: '8px', maxWidth: '600px', margin: '8px auto 0 auto', lineHeight: '1.6' }}>
+                      Welcome to your AI-guided operational workspace. Connect API specifications and teach skills to orchestrate dynamic mutations and bulk workflows.
+                    </p>
+                  </div>
+
+                  {/* Grid Features */}
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+                    gap: '16px', 
+                    width: '100%',
+                    marginTop: '12px'
+                  }}>
+                    
+                    <a 
+                      href="http://127.0.0.1:8000/documentation/index.html" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{ 
+                        padding: '20px', 
+                        background: '#ffffff', 
+                        border: '1px solid var(--border-neon)', 
+                        borderRadius: '12px', 
+                        textDecoration: 'none',
+                        color: 'inherit',
+                        textAlign: 'left',
+                        transition: 'all 0.2s',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.01)'
+                      }}
+                      className="hover-neon-border"
+                    >
+                      <span style={{ fontSize: '20px', display: 'block', marginBottom: '8px' }}>📖</span>
+                      <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-primary)' }}>System Library</h4>
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
+                        Explore detailed YAML schema specs, error jumps, and async status check polling.
+                      </p>
+                    </a>
+
+                    <div style={{ 
+                      padding: '20px', 
+                      background: '#ffffff', 
+                      border: '1px solid var(--border-neon)', 
+                      borderRadius: '12px',
+                      textAlign: 'left',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.01)'
+                    }}>
+                      <span style={{ fontSize: '20px', display: 'block', marginBottom: '8px' }}>🌐</span>
+                      <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-primary)' }}>Portals Hub</h4>
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
+                        Connect your active swagger specs and headers to compile live routing endpoints dynamically.
+                      </p>
+                    </div>
+
+                    <div style={{ 
+                      padding: '20px', 
+                      background: '#ffffff', 
+                      border: '1px solid var(--border-neon)', 
+                      borderRadius: '12px',
+                      textAlign: 'left',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.01)'
+                    }}>
+                      <span style={{ fontSize: '20px', display: 'block', marginBottom: '8px' }}>📜</span>
+                      <h4 style={{ fontSize: '13px', fontWeight: '700', color: 'var(--color-primary)' }}>Taught Skills</h4>
+                      <p style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: '1.5' }}>
+                        Register declarative runbook steps with forms collection and safety approvals.
+                      </p>
+                    </div>
+
+                  </div>
+
+                  {/* Suggestion Prompts */}
+                  <div style={{ marginTop: '12px', width: '100%' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: '600', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '10px' }}>
+                      Operational Suggestion Prompts
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+                      {[
+                        "Execute user enlistment workflow",
+                        "Create 5 users",
+                        "Batch register 3 users with active role: Administrator"
+                      ].map((promptText, idx) => (
+                        <button
+                          key={idx}
+                          onClick={() => setChatInput(promptText)}
+                          style={{
+                            padding: '6px 12px',
+                            background: '#ffffff',
+                            border: '1px solid var(--border-neon)',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            color: 'var(--color-primary-hover)',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                          }}
+                          className="hover-accent"
+                        >
+                          "{promptText}"
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              ) : (
+                messages.map((m, i) => (
+                  <div 
                   key={i} 
                   style={{ 
                     display: 'flex', 
@@ -345,24 +540,39 @@ export default function ChatWindow({
                     >
                       {statusLogs.map((log, index, arr) => {
                         const isLatest = index === arr.length - 1;
+                        const { prefix, color, bg } = parseLogDetails(log);
                         return (
-                          <div key={index} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, marginTop: '4px' }}>
+                          <div 
+                            key={index} 
+                            style={{ 
+                              display: 'flex', 
+                              gap: '12px', 
+                              alignItems: 'flex-start',
+                              padding: '8px 12px',
+                              borderRadius: '8px',
+                              background: bg,
+                              border: isLatest ? '1.5px solid rgba(179,139,77,0.2)' : '1px solid transparent',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, marginTop: '5px' }}>
                               {isLatest ? (
                                 <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-secondary)', boxShadow: '0 0 6px var(--color-secondary)' }} />
                               ) : (
                                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'rgba(179, 139, 77, 0.4)' }} />
                               )}
-                              {index < arr.length - 1 && (
-                                <div style={{ width: '1px', height: '24px', background: 'rgba(179, 139, 77, 0.15)', marginTop: '4px' }} />
-                              )}
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
+                              <span style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: color }}>
+                                {prefix}
+                              </span>
                               <span style={{ 
-                                fontSize: '12px', 
+                                fontSize: '12.5px', 
                                 color: isLatest ? 'var(--text-primary)' : 'var(--text-secondary)', 
                                 fontWeight: isLatest ? '600' : '400',
-                                lineHeight: '1.4'
+                                lineHeight: '1.5',
+                                wordBreak: 'break-word',
+                                fontFamily: 'var(--font-mono)'
                               }}>
                                 {log}
                               </span>
@@ -703,12 +913,18 @@ export default function ChatWindow({
                 lineHeight: '1.5'
               }}
             >
-              {statusLogs.map((log, index) => (
-                <div key={index} style={{ wordBreak: 'break-all' }}>
-                  <span style={{ color: '#b38b4d', marginRight: '8px' }}>&gt;</span>
-                  {log}
-                </div>
-              ))}
+              {statusLogs.map((log, index) => {
+                const { prefix, color } = parseLogDetails(log);
+                return (
+                  <div key={index} style={{ wordBreak: 'break-all', display: 'flex', gap: '8px', padding: '2px 0' }}>
+                    <span style={{ color: '#b38b4d', marginRight: '4px', flexShrink: 0 }}>&gt;</span>
+                    <span style={{ color: color, fontWeight: '700', flexShrink: 0, textTransform: 'uppercase', fontSize: '9px', width: '70px' }}>
+                      {prefix.replace(/[✅🧠📡❌🛡️⚙️\s\[\]]/g, '')}:
+                    </span>
+                    <span style={{ color: color === '#b91c1c' ? '#fca5a5' : '#f5f5f4' }}>{log}</span>
+                  </div>
+                );
+              })}
               
               {statusLogs.length === 0 && (
                 <div style={{ color: 'rgba(255,255,255,0.15)', fontStyle: 'italic' }}>
