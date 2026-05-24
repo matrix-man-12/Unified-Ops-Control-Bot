@@ -3,12 +3,47 @@ import { Cpu, RefreshCw } from 'lucide-react';
 import PortalSelector from './components/PortalSelector';
 import ChatWindow from './components/ChatWindow';
 import SkillStudio from './components/SkillStudio';
+import GlobalToastContainer from './components/GlobalToastContainer';
+import GlobalConfirmModal from './components/GlobalConfirmModal';
 
 export default function App() {
   const [activePortalId, setActivePortalId] = useState(null);
   const [modelProvider, setModelProvider] = useState('gemini'); // gemini, openai, agent_builder
   const [session_id, setSessionId] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Global UI Notifications & Confirmation states
+  const [toasts, setToasts] = useState([]);
+  const [confirmModal, setConfirmModal] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: null
+  });
+
+  const showToast = (message, type = 'info') => {
+    const id = Math.random().toString(36).substring(7);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  const handleCloseToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const showConfirm = (title, message, onConfirmCallback) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: () => {
+        onConfirmCallback();
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
 
   // Active Workspace View (chat or studio)
   const [activeView, setActiveView] = useState('chat');
@@ -86,22 +121,29 @@ export default function App() {
 
   const handleDeleteSession = async (sid, e) => {
     if (e) e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this operational chat run?')) return;
-    try {
-      const res = await fetch(`/api/sessions/${sid}`, { method: 'DELETE' });
-      if (res.ok) {
-        const nextSessions = await fetchSessions(activePortalId);
-        if (session_id === sid) {
-          if (nextSessions && nextSessions.length > 0) {
-            setSessionId(nextSessions[0].id);
-          } else {
-            handleCreateSession("Session initialized");
+    showConfirm(
+      'Delete Operational Run',
+      'Are you sure you want to permanently delete this operational chat run history?',
+      async () => {
+        try {
+          const res = await fetch(`/api/sessions/${sid}`, { method: 'DELETE' });
+          if (res.ok) {
+            const nextSessions = await fetchSessions(activePortalId);
+            if (session_id === sid) {
+              if (nextSessions && nextSessions.length > 0) {
+                setSessionId(nextSessions[0].id);
+              } else {
+                handleCreateSession("Session initialized");
+              }
+            }
+            showToast('Operational run history deleted successfully.', 'success');
           }
+        } catch (err) {
+          console.error('Failed to delete session', err);
+          showToast('Failed to delete operational run history.', 'error');
         }
       }
-    } catch (err) {
-      console.error('Failed to delete session', err);
-    }
+    );
   };
 
   // 1. Fetch sessions when activePortalId changes
@@ -179,7 +221,7 @@ export default function App() {
       } 
       
       else if (data.type === 'error') {
-        alert('Systems Error: ' + data.message);
+        showToast('Systems Error: ' + data.message, 'error');
         setStatusLogs(prev => [...prev, `ERROR: ${data.message}`]);
       }
     };
@@ -198,7 +240,7 @@ export default function App() {
 
   const handleSendChatMessage = (text, filePath, fileName) => {
     if (!activePortalId) {
-      alert('Please configure and select a Portal in the sidebar first.');
+      showToast('Please configure and select a Portal in the sidebar first.', 'warning');
       return;
     }
 
@@ -267,6 +309,8 @@ export default function App() {
         onSelectSession={setSessionId}
         onCreateSession={() => handleCreateSession()}
         onDeleteSession={handleDeleteSession}
+        showToast={showToast}
+        showConfirm={showConfirm}
       />
 
       {/* 2. Main Operational Workspace */}
@@ -414,6 +458,8 @@ export default function App() {
               setActiveView('chat');
               setRefreshTrigger(t => t + 1);
             }}
+            showToast={showToast}
+            showConfirm={showConfirm}
           />
         ) : (
           <div style={{ flex: '1', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -430,11 +476,24 @@ export default function App() {
               handleHitlResponse={handleHitlResponse}
               onCancelInterrupt={() => setInterruptPayload(null)}
               onCreateSession={() => handleCreateSession()}
+              showToast={showToast}
+              showConfirm={showConfirm}
             />
           </div>
         )}
 
       </div>
+
+      {/* Global Toast Stack & Confirmation Modal */}
+      <GlobalToastContainer toasts={toasts} onCloseToast={handleCloseToast} />
+      
+      <GlobalConfirmModal 
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

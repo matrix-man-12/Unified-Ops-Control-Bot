@@ -214,7 +214,7 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                 
                 if existing_session:
                     db_msgs = list_messages(session_id)
-                    db_logs = list_audit_logs(session_id)
+                    db_logs = [log for log in list_audit_logs(session_id) if not (log.startswith("Session restored for Portal:") or log.startswith("Session initialized for Portal:"))]
                     
                     lc_messages = []
                     for m in db_msgs:
@@ -231,7 +231,7 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                         "current_step_index": 0,
                         "variables": {},
                         "interrupt_payload": None,
-                        "status_logs": db_logs if db_logs else [f"Session restored for Portal: '{portal['name']}'."],
+                        "status_logs": db_logs,
                         "model_provider": model_provider
                     }
                 else:
@@ -243,11 +243,10 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                         "current_step_index": 0,
                         "variables": {},
                         "interrupt_payload": None,
-                        "status_logs": [f"Session initialized for Portal: '{portal['name']}'."],
+                        "status_logs": [],
                         "model_provider": model_provider
                     }
                     save_session(session_id, portal_id, title="New Operations Run")
-                    save_audit_log(session_id, f"Session initialized for Portal: '{portal['name']}'.")
                 
             session_state = ACTIVE_SESSIONS_STATE[session_id]
             session_state["model_provider"] = model_provider
@@ -256,14 +255,14 @@ async def websocket_chat_endpoint(websocket: WebSocket):
             if cmd_type == "restore":
                 from app.database import list_messages, list_audit_logs
                 db_msgs = [{"sender": m["sender"], "text": m["text"]} for m in list_messages(session_id)]
-                db_logs = list_audit_logs(session_id)
+                db_logs = [log for log in list_audit_logs(session_id) if not (log.startswith("Session restored for Portal:") or log.startswith("Session initialized for Portal:"))]
                 
                 await websocket.send_text(json.dumps({
                     "type": "restore",
                     "messages": db_msgs if db_msgs else [
                         {"sender": "agent", "text": "Hello! I am your Unified Portal Agent. Please configure and select a Portal in the left sidebar, and teach me some Swagger and Project Skill runbooks. Once done, ask me to perform operations!"}
                     ],
-                    "logs": db_logs if db_logs else [f"Session restored for Portal: '{portal['name']}'."],
+                    "logs": db_logs,
                     "plan": session_state["plan"],
                     "current_step_index": session_state["current_step_index"]
                 }))

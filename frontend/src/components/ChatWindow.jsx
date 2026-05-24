@@ -60,7 +60,9 @@ export default function ChatWindow({
   handleFormSubmit,
   handleHitlResponse,
   onCancelInterrupt,
-  onCreateSession
+  onCreateSession,
+  showToast,
+  showConfirm
 }) {
   const [activeTab, setActiveTab] = useState('chat'); // chat, plan, terminal
   const [chatInput, setChatInput] = useState('');
@@ -121,11 +123,11 @@ export default function ChatWindow({
         setUploadedFileName(file.name);
       } else {
         setUploadState('error');
-        alert('File upload failed.');
+        showToast('File upload failed.', 'error');
       }
     } catch (err) {
       setUploadState('error');
-      alert('Upload error: ' + err.message);
+      showToast('Upload error: ' + err.message, 'error');
     }
   };
 

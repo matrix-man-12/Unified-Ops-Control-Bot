@@ -83,3 +83,28 @@ The following choices were solidified based on user review of the technical impl
 
 ---
 *End of log entry.*
+
+## Log Entry: 2026-05-25T01:35:00+05:30 (Custom Dialogs & Premium Alerts System)
+
+### 1. Context Alerts and Modals Auditing
+* **Action**: Scanned the entire React-based frontend client codebase to find and remove native, blocking browser `alert()` and `confirm()` popup boxes.
+* **Action**: Designed a unified global alerts and confirmation dialog architecture to ensure zero blocking popup prompts and full alignment with the application's organic gold-linen styling.
+
+### 2. Core UI Component Integration
+* **Action**: Created [GlobalToastContainer.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/GlobalToastContainer.jsx) to display sleek, non-blocking stackable notifications (success, warning, error, info states) in the top-right corner.
+* **Action**: Created [GlobalConfirmModal.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/GlobalConfirmModal.jsx) to display a polished glassmorphic overlay for operational approvals. Destructive actions (such as deletions) dynamically render in a Rose/destructive button theme, while standard validations leverage warm amber organic highlights.
+* **Action**: Integrated state hooks and non-blocking triggers `showToast` and `showConfirm` into the application root [App.jsx](file:///e:/2026/May/AI_Bot/frontend/src/App.jsx).
+
+### 3. Frontend Component & Service Refactoring
+* **Action**: Passed `showToast` and `showConfirm` downward into child views.
+* **Action**: Refactored [PortalSelector.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/PortalSelector.jsx) to invoke `showConfirm` for both portal profile deletions and custom taught skill runbook deletions, and `showToast` for successfully completed operations and imports.
+* **Action**: Refactored [ChatWindow.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/ChatWindow.jsx) and [SkillStudio.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/SkillStudio.jsx) to route attachment upload exceptions via the non-blocking toast layouts.
+* **Action**: Updated unused helper modules [FileUploader.jsx](file:///e:/2026/May/AI_Bot/frontend/src/components/FileUploader.jsx) to ensure complete codebase alignment.
+* **Action**: Removed noisy "Session restored for Portal:..." and "Session initialized..." status audit logs from the WebSocket connection startup triggers in [main.py](file:///e:/2026/May/AI_Bot/backend/app/main.py) to prevent dashboard layout log spam.
+
+### 4. Technical Validation
+* **Action**: Checked Vite production building (`npm run build`) which completed with zero JavaScript or React syntax errors.
+* **Action**: Verified with ripgrep searches that no native browser alerts/confirms remain in the frontend workspace.
+
+---
+*End of log entry.*

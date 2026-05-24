@@ -10,7 +10,9 @@ export default function PortalSelector({
   activeSessionId,
   onSelectSession,
   onCreateSession,
-  onDeleteSession
+  onDeleteSession,
+  showToast,
+  showConfirm
 }) {
   const [portals, setPortals] = useState([]);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -133,24 +135,31 @@ export default function PortalSelector({
         fetchPortals();
       }
     } catch (err) {
-      alert('Failed to register portal: ' + err.message);
+      showToast('Failed to register portal: ' + err.message, 'error');
     }
   };
 
   const handleDeletePortal = async (pid, e) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this portal?')) return;
-    try {
-      const res = await fetch(`/api/portals/${pid}`, { method: 'DELETE' });
-      if (res.ok) {
-        if (activePortalId === pid) {
-          onSelectPortal(null);
+    showConfirm(
+      'Delete Portal Profile',
+      'Are you sure you want to permanently delete this portal connection profile?',
+      async () => {
+        try {
+          const res = await fetch(`/api/portals/${pid}`, { method: 'DELETE' });
+          if (res.ok) {
+            if (activePortalId === pid) {
+              onSelectPortal(null);
+            }
+            fetchPortals();
+            showToast('Portal profile deleted successfully.', 'success');
+          }
+        } catch (err) {
+          console.error('Delete portal error', err);
+          showToast('Failed to delete portal profile.', 'error');
         }
-        fetchPortals();
       }
-    } catch (err) {
-      console.error('Delete portal error', err);
-    }
+    );
   };
 
   const handleEditPortal = (p, e) => {
@@ -184,12 +193,13 @@ export default function PortalSelector({
       });
       if (res.ok) {
         fetchSkills(activePortalId);
+        showToast('Skill runbook uploaded successfully.', 'success');
       } else {
         const errorData = await res.json();
-        alert('Skill upload error: ' + errorData.detail);
+        showToast('Skill upload error: ' + errorData.detail, 'error');
       }
     } catch (err) {
-      alert('Failed to upload skill file.');
+      showToast('Failed to upload skill file.', 'error');
     } finally {
       setUploadingSkill(false);
     }
@@ -221,10 +231,10 @@ export default function PortalSelector({
           setGeneratedSkillId(`custom_skill_${Math.random().toString(36).substring(5)}`);
         }
       } else {
-        alert('Skill Builder Agent returned an error.');
+        showToast('Skill Builder Agent returned an error.', 'error');
       }
     } catch (err) {
-      alert('Failed to contact Skill Builder Agent.');
+      showToast('Failed to contact Skill Builder Agent.', 'error');
     } finally {
       setDraftingSkill(false);
     }
@@ -252,12 +262,13 @@ export default function PortalSelector({
         setSkillPrompt('');
         setShowSkillBuilder(false);
         fetchSkills(activePortalId);
+        showToast('Generated runbook registered successfully.', 'success');
       } else {
         const errorData = await res.json();
-        alert('Validation error: ' + errorData.detail);
+        showToast('Validation error: ' + errorData.detail, 'error');
       }
     } catch (err) {
-      alert('Failed to register generated runbook.');
+      showToast('Failed to register generated runbook.', 'error');
     } finally {
       setUploadingSkill(false);
     }
@@ -692,19 +703,25 @@ export default function PortalSelector({
                           <Edit2 size={13} className="hover-accent" />
                         </button>
                         <button 
-                          onClick={async (e) => {
+                          onClick={(e) => {
                             e.stopPropagation();
-                            if (!confirm('Are you sure you want to delete this skill runbook?')) return;
-                            try {
-                              const res = await fetch(`/api/skills/${s.id}`, { method: 'DELETE' });
-                              if (res.ok) {
-                                fetchSkills(activePortalId);
-                              } else {
-                                alert('Failed to delete skill.');
+                            showConfirm(
+                              'Delete Skill Runbook',
+                              `Are you sure you want to permanently delete the custom skill runbook "${s.name}"?`,
+                              async () => {
+                                try {
+                                  const res = await fetch(`/api/skills/${s.id}`, { method: 'DELETE' });
+                                  if (res.ok) {
+                                    fetchSkills(activePortalId);
+                                    showToast('Skill runbook deleted successfully.', 'success');
+                                  } else {
+                                    showToast('Failed to delete skill.', 'error');
+                                  }
+                                } catch (err) {
+                                  showToast('Error: ' + err.message, 'error');
+                                }
                               }
-                            } catch (err) {
-                              alert('Error: ' + err.message);
-                            }
+                            );
                           }} 
                           style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px' }}
                           title="Remove Skill"

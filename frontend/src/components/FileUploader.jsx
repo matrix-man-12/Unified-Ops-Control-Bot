@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileSpreadsheet, Film, Image, Check, AlertCircle, X } from 'lucide-react';
 
-export default function FileUploader({ onUploadComplete, activePortalId }) {
+export default function FileUploader({ onUploadComplete, activePortalId, showToast }) {
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('idle'); // idle, uploading, success, error
@@ -22,7 +22,7 @@ export default function FileUploader({ onUploadComplete, activePortalId }) {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-
+ 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       uploadFile(e.dataTransfer.files[0]);
     }
@@ -37,7 +37,11 @@ export default function FileUploader({ onUploadComplete, activePortalId }) {
 
   const uploadFile = async (selectedFile) => {
     if (!activePortalId) {
-      alert("Please select a Portal config first before attaching files.");
+      if (showToast) {
+        showToast("Please select a Portal config first before attaching files.", 'warning');
+      } else {
+        console.warn("Please select a Portal config first before attaching files.");
+      }
       return;
     }
     

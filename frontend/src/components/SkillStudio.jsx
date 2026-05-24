@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Sparkles, Save, X, Code, FileCode, CheckCircle, AlertTriangle, HelpCircle, Paperclip } from 'lucide-react';
 
-export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess }) {
+export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess, showToast, showConfirm }) {
   const [yamlContent, setYamlContent] = useState('');
   const [prompt, setPrompt] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -41,11 +41,11 @@ export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess })
         setUploadedFileName(file.name);
       } else {
         setUploadState('error');
-        alert('File upload failed.');
+        showToast('File upload failed.', 'error');
       }
     } catch (err) {
       setUploadState('error');
-      alert('Upload error: ' + err.message);
+      showToast('Upload error: ' + err.message, 'error');
     }
   };
 
