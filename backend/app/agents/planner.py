@@ -33,22 +33,6 @@ def get_llm(provider: str) -> Any:
             temperature=0.0
         )
 
-def find_matching_skill(user_query: str, skills: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """Determine if a registered YAML skill matches the user's conversational intent."""
-    query = user_query.lower()
-    for skill in skills:
-        yaml_content = yaml_safe_load(skill.get("yaml_content", ""))
-        if not yaml_content:
-            continue
-        # Check name and description matches
-        name = yaml_content.get("name", "").lower()
-        desc = yaml_content.get("description", "").lower()
-        skill_id = yaml_content.get("id", "").lower()
-        
-        if skill_id in query or name in query or any(word in query and len(word) > 3 for word in name.split()):
-            return yaml_content
-    return None
-
 def yaml_safe_load(content: str) -> Optional[Dict[str, Any]]:
     """Graceful wrapper around YAML parsing."""
     import yaml
@@ -58,16 +42,14 @@ def yaml_safe_load(content: str) -> Optional[Dict[str, Any]]:
         return None
 
 def detect_loop_count(query: str, history: str = "") -> int:
-    """Detect if the user is asking to execute actions in a loop/batch."""
+    """Fallback loop count parser if semantic mapping needs verification."""
     for text in [query, history]:
         if not text:
             continue
-        # Look for number patterns followed by common terms (users, teams, items, portals, roles)
         match = re.search(r'\b(?:create|add|delete|register|make|run|update|fetch|get)\s+(\d+)\b', text, re.IGNORECASE)
         if match:
             return int(match.group(1))
         
-        # Check general number followed by words
         match2 = re.search(r'\b(\d+)\s+(?:users|teams|items|portals|roles|departments|files|channels|messages|videos|skills|requests|calls)\b', text, re.IGNORECASE)
         if match2:
             return int(match2.group(1))
@@ -76,8 +58,9 @@ def detect_loop_count(query: str, history: str = "") -> int:
 
 def plan_node(state: AgentState) -> Dict[str, Any]:
     """
-    Planner Node: Analyzes intent, binds skills or compiles customized tools sequences,
-    and updates the state plan.
+    Planner Node: High-intelligence semantic classifier, context builder, and runbook compiler.
+    Classifies conversational vs operational intents, semantically extracts prompt inputs, 
+    auto-prepopulates loop parameter grids to bypass dynamic forms, and designs customized step runbooks.
     """
     messages = state.get("messages", [])
     user_query = messages[-1].content if messages else ""
@@ -86,13 +69,11 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
     provider = state.get("model_provider", settings.LLM_PROVIDER)
     
     logs = list(state.get("status_logs", []))
-    
-    # Check if this node is returning from an approved plan verification
     variables = dict(state.get("variables", {}))
+    
+    # 1. Bypassing planner if we are returning from an approved plan verification overlay
     if variables.get("_approved_plan"):
-        logs.append("Execution plan approved by operator. Transitioning directly to execution node.")
-        
-        # Pull parameters returned from the verification screen
+        logs.append("Operational runbook checklist approved by system operator. Resuming execution phase.")
         plan = list(state.get("plan", []))
         parameter_list = variables.get("_parameter_list")
         if parameter_list:
@@ -108,17 +89,17 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
         
     logs.append(f"Analyzing operational request: '{user_query}'...")
     
-    # Format preceding conversation history for dynamic context
+    # Format conversational history context
     history_lines = []
     for msg in messages[:-1]:
-        role = "User" if isinstance(msg, HumanMessage) or getattr(msg, "type", "") == "human" else "Agent"
+        role = "Operator" if isinstance(msg, HumanMessage) or getattr(msg, "type", "") == "human" else "Agent"
         history_lines.append(f"{role}: {msg.content}")
     history_context = "\n".join(history_lines) if history_lines else "No preceding conversation history."
     
-    loop_count = detect_loop_count(user_query, history_context)
-    is_loop = loop_count > 1
+    fallback_loop_count = detect_loop_count(user_query, history_context)
+    is_loop_fallback = fallback_loop_count > 1
     
-    # 1. Compile registered Project Skills context dynamically for the LLM
+    # 2. Compile pre-defined Project Skills context dynamically for the LLM
     skills_context = "No pre-defined Project Skills registered."
     if skills:
         skills_list = []
@@ -126,14 +107,14 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
             yaml_content = yaml_safe_load(s.get("yaml_content", ""))
             if yaml_content:
                 skills_list.append({
-                    "id": yaml_content.get("id"),
-                    "name": yaml_content.get("name"),
-                    "description": yaml_content.get("description"),
-                    "steps": yaml_content.get("steps")
+                  "id": yaml_content.get("id"),
+                  "name": yaml_content.get("name"),
+                  "description": yaml_content.get("description"),
+                  "steps": yaml_content.get("steps")
                 })
         skills_context = f"Available Pre-defined Project Skills/Templates:\n{json.dumps(skills_list, indent=2)}"
         
-    # 2. Compile dynamic Swagger operations context dynamically for the LLM
+    # 3. Compile active Portal Swagger endpoints mapping dynamically for the LLM
     portal = get_portal(portal_id)
     swagger_context = "No active Swagger OpenAPI specification loaded for this portal."
     if portal and portal.get("swagger_doc"):
@@ -156,128 +137,182 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
         except Exception as e:
             swagger_context = f"Active Swagger Spec raw guidelines (compilation issue: {e}):\n{portal['swagger_doc'][:2000]}"
             
-    # Pre-extract emails or identifiers inside query for loop parameter pre-population
-    emails = re.findall(r'[\w\.-]+@[\w\.-]+\.\w+', user_query)
-    initial_params = []
-    if is_loop:
-        for i in range(loop_count):
-            item_params = {}
-            if i < len(emails):
-                item_params["email"] = emails[i]
-                item_params["user_email"] = emails[i]
-            initial_params.append(item_params)
-            
-    logs.append(f"Initializing Dynamic LLM Planner with active skills and API routing tables...")
+    logs.append(f"Invoking Cognitive LLM Planner (provider: '{provider}') to evaluate semantic routing...")
     
-    prompt = f"""
-    You are an expert systems operator, compiler, and planner. The user wants to achieve: "{user_query}"
+    system_prompt_template = """
+    You are an expert Systems Architect, Operator, and Runbook Compiler.
+    The user is asking: "{USER_QUERY}"
     
-    Here is the preceding conversation history for context:
-    {history_context}
+    Active Portal Name: "{PORTAL_NAME}"
+    Preceding Conversation History:
+    {HISTORY_CONTEXT}
     
-    Here is the active Portal API operations context (raw tools):
-    {swagger_context}
+    Active Swagger Specifications Context:
+    {SWAGGER_CONTEXT}
     
-    Here is the list of available Pre-defined Project Skills (reusable templates):
-    {skills_context}
+    Available Pre-defined Project Skills Context (reusable templates):
+    {SKILLS_CONTEXT}
     
-    Your task is to compile a sequential list of execution steps (runbook plan) to achieve the user's goal.
+    YOUR MISSION:
+    You must classify the user's intent and output a valid JSON response.
     
-    INTELLIGENT PLANNING RULES:
-    1. PRE-DEFINED SKILLS MATCHING: If the user request matches one of the pre-defined Project Skills (e.g. matching the name, description, or intent, like creating a user), you should mimic/compile that skill's step structure. Fill in the 'tool_name', 'path', 'method', and 'param_mappings' exactly as specified in the template.
-    2. DYNAMIC API ROUTING: If no pre-defined skill matches the intent, use the raw API operations listed in the Swagger context to compose a custom plan.
-    3. VARIABLE EXTRACTION: Extract any variables (such as emails, roles, names, ids) provided by the user in their query, and map them to the 'inputs' fields.
-    4. BATCH / LOOP OPERATION:
-       - The user wants to execute operations for {loop_count} items (execution_mode: '{"loop" if is_loop else "single"}').
-       - Ensure every step in the plan is configured with:
-         - execution_mode: "{"loop" if is_loop else "single"}"
-         - loop_count: {loop_count}
-         - current_loop_index: 0
-         - parameter_list: {json.dumps(initial_params) if is_loop else "[]"}
-         - loop_results: {{"passed": 0, "failed": 0, "details": []}} if is_loop else null
-       - If loop count is > 1, extract any inline parameters for the different items (e.g., if query contains multiple emails) and map them as separate dictionaries inside the 'parameter_list' list.
+    CLASSIFICATION & ROUTING RULES:
+    1. CONVERSATIONAL MODE: If the user query is conversational (e.g. greetings, general questions about how the agent works, asking 'what skills do you have', requesting explanation of a portal spec, or investigatory chat), you must classify this as "conversational". Do NOT generate a runbook checklist for conversational queries! Instead, output a highly intelligent, comprehensive, senior engineer conversational response directly.
+    2. OPERATIONAL MODE: If the user query is a request to execute an action, trigger workflows, batch process items, or run portal endpoints (e.g. creating users, registering teams, syncing legacy servers), classify this as "plan". You must construct a highly detailed, sequential runbook checklist.
+    
+    INTELLIGENT PLANNING & VARIABLE EXTRACTION RULES (for "plan" mode):
+    1. PRE-DEFINED SKILLS MATCHING: Semantically evaluate the user's prompt. If it matches a pre-defined Project Skill (reusable template), adopt and compile that skill's step checklist structure, matching the 'tool_name', 'path', 'method', and 'param_mappings' parameters.
+    2. DYNAMIC API ROUTING: If no pre-defined template matches, scan the Swagger context. Compose a custom step-by-step checklist of API calls and manual confirmation checks to accomplish the task dynamically.
+    3. SEMANTIC PARAMETER EXTRACTION (Super Smart Variable Population):
+       - Parse the user query and the chat history to extract *all* parameters and variables provided (such as usernames, emails, roles, team names, IDs, etc.).
+       - Map these extracted variables directly to the 'inputs' block (for single steps) or inside the 'parameter_list' array (for loops/batches).
+       - For example, if the query contains multiple users: "Add Yogi (yogi@gmail.com, Admin) and Yogi2 (yogi2@gmail.com, Developer)", extract this into:
+         "parameter_list": [
+            {"username": "Yogi", "email": "yogi@gmail.com", "role": "Administrator"},
+            {"username": "Yogi2", "email": "yogi2@gmail.com", "role": "Developer"}
+         ]
+       - By pre-populating all available parameters here, the systems executor can automatically skip manual 'collect_input' prompts for variables that were already provided, making the execution flow friction-free!
+    4. BATCH & LOOP ITERATIONS:
+       - Detect if the command requires loop/batch processing (e.g. "Create 5 users" or "Register 3 portals").
+       - Set execution_mode: "loop", loop_count: X, parameter_list: [extracted params array], and loop_results: {"passed": 0, "failed": 0, "details": []} for every step in the loop!
+       - If the user specifies a loop count but didn't provide enough inline parameters, pre-populate the 'parameter_list' with as many extracted parameters as possible, and configure the rest as empty dictionaries.
        
-    Output a JSON array representing the steps. Each step must have:
-    - step: integer sequence (1, 2, 3...)
-    - id: unique step snake_case ID
-    - description: what this step is doing
-    - action_type: "collect_input" (to gather missing inputs from the user) or "api_call" (to make a REST call) or "manual_instruction"
-    - tool_name: target operation name (e.g., "create_user")
-    - path: REST URL path (e.g., "/users")
-    - method: HTTP method in lowercase (e.g., "post")
-    - param_mappings: list of parameter mapping dicts (e.g. [ {{"name": "email", "in": "body"}} ])
-    - inputs: input key-value binds
-    - requires_approval: true (if it's a POST, PUT, DELETE write operation)
-    - input_fields: required only for collect_input step. A list of dicts describing required parameters (e.g. [ {{"name": "email", "type": "string", "required": true, "description": "email"}} ])
+    OUTPUT JSON FORMAT CONTRACT:
+    You must output a single, raw, valid JSON block inside markdown fences. Do not output conversation prefix/suffix texts.
     
-    Response format must be a raw JSON array block inside code fences:
+    If type is "conversational":
     ```json
-    [ ... ]
+    {
+      "type": "conversational",
+      "response": "Your detailed, exceptionally smart, senior-engineer conversational response here..."
+    }
+    ```
+    
+    If type is "plan":
+    ```json
+    {
+      "type": "plan",
+      "steps": [
+        {
+          "step": 1,
+          "id": "step_id_snake_case",
+          "description": "What this step does",
+          "action_type": "collect_input" or "api_call" or "manual_instruction",
+          "tool_name": "operationId_from_swagger",
+          "path": "endpoint_path_from_swagger (e.g. /users)",
+          "method": "http_method_lowercase (e.g. post)",
+          "param_mappings": [ { "name": "email", "in": "body" } ],
+          "inputs": { "email": "{{email}}" },
+          "requires_approval": true (if write mutation: POST, PUT, DELETE),
+          "input_fields": [ { "name": "email", "type": "string", "required": true, "description": "User email" } ],
+          "execution_mode": "single" or "loop",
+          "loop_count": 1,
+          "current_loop_index": 0,
+          "parameter_list": [],
+          "loop_results": null
+        }
+      ]
+    }
     ```
     """
-    
+    system_prompt = system_prompt_template.replace("{USER_QUERY}", user_query)
+    system_prompt = system_prompt.replace("{PORTAL_NAME}", portal.get('name') if portal else 'Unknown Portal')
+    system_prompt = system_prompt.replace("{HISTORY_CONTEXT}", history_context)
+    system_prompt = system_prompt.replace("{SWAGGER_CONTEXT}", swagger_context)
+    system_prompt = system_prompt.replace("{SKILLS_CONTEXT}", skills_context)
+
     try:
         llm = get_llm(provider)
-        response = llm.invoke([HumanMessage(content=prompt)])
+        response = llm.invoke([HumanMessage(content=system_prompt)])
         content = response.content
         
-        # Regex extract JSON array
-        json_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
+        # Regex extract JSON array or object
+        json_match = re.search(r'\{\s*".*"\s*:\s*.*\}', content, re.DOTALL)
         if json_match:
-            plan_steps = json.loads(json_match.group(0))
-            # Format and inject pending status
-            for idx, s in enumerate(plan_steps):
-                s["step"] = idx + 1
-                s["status"] = "pending"
-                if "execution_mode" not in s:
-                    s["execution_mode"] = "loop" if is_loop else "single"
-                    s["loop_count"] = loop_count
-                    s["current_loop_index"] = 0
-                    s["parameter_list"] = initial_params if is_loop else []
-                    s["loop_results"] = {"passed": 0, "failed": 0, "details": []} if is_loop else None
-                if "requires_approval" not in s:
-                    # Safe default: approve all writes
-                    m = s.get("method", "get").lower()
-                    s["requires_approval"] = m in ["post", "put", "delete"]
+            parsed_outcome = json.loads(json_match.group(0))
+            
+            # --- CASE A: Conversational routing ---
+            if parsed_outcome.get("type") == "conversational":
+                conversational_text = parsed_outcome.get("response", "I am standing by to assist with your portal operations.")
+                logs.append(conversational_text)
+                return {
+                    "plan": [],
+                    "current_step_index": 0,
+                    "interrupt_payload": None,
+                    "status_logs": logs
+                }
+                
+            # --- CASE B: Operational plan routing ---
+            elif parsed_outcome.get("type") == "plan" and parsed_outcome.get("steps"):
+                plan_steps = parsed_outcome.get("steps", [])
+                
+                # Double-check schema structures and inject pending status defaults
+                for idx, s in enumerate(plan_steps):
+                    s["step"] = idx + 1
+                    s["status"] = "pending"
                     
-            # Scan plan steps to aggregate all required input collection fields
-            required_fields = []
-            seen_fields = set()
-            for s in plan_steps:
-                if s.get("action_type") == "collect_input" and s.get("input_fields"):
-                    for f in s.get("input_fields"):
-                        if f.get("name") not in seen_fields:
-                            required_fields.append(f)
-                            seen_fields.add(f.get("name"))
-            
-            logs.append(f"Successfully compiled proposed plan with {len(plan_steps)} steps. Awaiting operator verification upfront.")
-            
-            return {
-                "plan": plan_steps,
-                "current_step_index": 0,
-                "interrupt_payload": {
-                    "type": "plan_verification",
-                    "step_id": "plan_approve",
-                    "title": f"Verify Proposed Operations Runbook: '{user_query}'",
-                    "steps": plan_steps,
-                    "execution_mode": "loop" if is_loop else "single",
-                    "loop_count": loop_count,
-                    "fields": required_fields,
-                    "parameter_list": initial_params if is_loop else []
-                },
-                "status_logs": logs
-            }
+                    if "execution_mode" not in s:
+                        s["execution_mode"] = "loop" if is_loop_fallback else "single"
+                        s["loop_count"] = fallback_loop_count
+                        s["current_loop_index"] = 0
+                        s["parameter_list"] = []
+                        s["loop_results"] = {"passed": 0, "failed": 0, "details": []} if is_loop_fallback else None
+                        
+                    if "requires_approval" not in s:
+                        m = s.get("method", "get").lower()
+                        s["requires_approval"] = m in ["post", "put", "delete"]
+                
+                # Collate required collect_input parameters to display verification card upfront
+                required_fields = []
+                seen_fields = set()
+                primary_param_list = []
+                primary_loop_count = 1
+                primary_mode = "single"
+                
+                if plan_steps:
+                    first_step = plan_steps[0]
+                    primary_mode = first_step.get("execution_mode", "single")
+                    primary_loop_count = first_step.get("loop_count", 1) or 1
+                    primary_param_list = first_step.get("parameter_list", []) or []
+                    
+                for s in plan_steps:
+                    if s.get("action_type") == "collect_input" and s.get("input_fields"):
+                        for f in s.get("input_fields"):
+                            if f.get("name") not in seen_fields:
+                                required_fields.append(f)
+                                seen_fields.add(f.get("name"))
+                                
+                logs.append(f"Successfully compiled proposed operational checklist with {len(plan_steps)} steps. Awaiting systems operator verification...")
+                
+                return {
+                    "plan": plan_steps,
+                    "current_step_index": 0,
+                    "interrupt_payload": {
+                        "type": "plan_verification",
+                        "step_id": "plan_approve",
+                        "title": f"Verify Operational Runbook checklist: '{user_query}'",
+                        "steps": plan_steps,
+                        "execution_mode": primary_mode,
+                        "loop_count": primary_loop_count,
+                        "fields": required_fields,
+                        "parameter_list": primary_param_list
+                    },
+                    "status_logs": logs
+                }
+            else:
+                raise ValueError("Parsed outcome structure is invalid.")
         else:
-            raise ValueError("LLM response did not contain a valid JSON plan array.")
+            raise ValueError("LLM response did not contain a valid JSON block.")
+            
     except Exception as exc:
-        logs.append(f"LLM planner compilation failed: {exc}. Creating fallback manual review step.")
-        # Fallback placeholder single action
+        logs.append(f"Cognitive LLM classification failed: {exc}. Initializing fallback manual review checklist.")
+        # Safe fallback: create a manual operation checklist step
         fallback_step = {
             "step": 1,
-            "id": "operator_fallback",
-            "description": f"Perform manual review of: {user_query}",
+            "id": "operator_manual_review",
+            "description": f"Evaluate and execute request manually: {user_query}",
             "action_type": "manual_instruction",
-            "message": f"Review and resolve request manually: {user_query}",
+            "message": f"Review, resolve, and confirm task manually inside the portal: {user_query}",
             "status": "pending",
             "execution_mode": "single",
             "loop_count": 1,
@@ -300,6 +335,3 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
             },
             "status_logs": logs
         }
-
-
-

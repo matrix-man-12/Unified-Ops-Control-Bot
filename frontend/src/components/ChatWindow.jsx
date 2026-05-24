@@ -51,7 +51,6 @@ export default function ChatWindow({
 }) {
   const [activeTab, setActiveTab] = useState('chat'); // chat, plan, terminal
   const [chatInput, setChatInput] = useState('');
-  const [showAgentMind, setShowAgentMind] = useState(true);
   
   // File upload state
   const [uploadState, setUploadState] = useState('idle'); // idle, uploading, success, error
@@ -114,6 +113,46 @@ export default function ChatWindow({
     setChatInput('');
     clearAttachment();
   };
+
+  const renderMessage = (m, i) => (
+    <div 
+      key={`msg-${i}`} 
+      className="animate-fade-in"
+      style={{ 
+        display: 'flex', 
+        gap: '14px', 
+        alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start',
+        maxWidth: '75%'
+      }}
+    >
+      {m.sender !== 'user' && (
+        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(179, 139, 77, 0.1)', border: '1px solid rgba(179,139,77,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Bot size={16} style={{ color: 'var(--color-primary)' }} />
+        </div>
+      )}
+      
+      <div 
+        style={{ 
+          background: m.sender === 'user' ? 'var(--color-primary)' : 'var(--color-bg-paper)',
+          border: '1px solid var(--border-neon)',
+          color: m.sender === 'user' ? '#fff' : 'var(--text-primary)',
+          padding: '12px 16px',
+          borderRadius: m.sender === 'user' ? '14px 14px 0 14px' : '0 14px 14px 14px',
+          fontSize: '13.5px',
+          lineHeight: '1.6',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.01)'
+        }}
+      >
+        {m.text}
+      </div>
+
+      {m.sender === 'user' && (
+        <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(179, 139, 77, 0.1)', border: '1px solid rgba(179,139,77,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <User size={16} style={{ color: 'var(--color-secondary)' }} />
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div 
@@ -443,146 +482,149 @@ export default function ChatWindow({
 
                 </div>
               ) : (
-                messages.map((m, i) => (
-                  <div 
-                  key={i} 
-                  style={{ 
-                    display: 'flex', 
-                    gap: '14px', 
-                    alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start',
-                    maxWidth: '75%'
-                  }}
-                >
-                  {m.sender !== 'user' && (
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(179, 139, 77, 0.1)', border: '1px solid rgba(179,139,77,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Bot size={16} style={{ color: 'var(--color-primary)' }} />
-                    </div>
-                  )}
-                  
-                  <div 
-                    style={{ 
-                      background: m.sender === 'user' ? 'var(--color-primary)' : 'var(--color-bg-paper)',
-                      border: '1px solid var(--border-neon)',
-                      color: m.sender === 'user' ? '#fff' : 'var(--text-primary)',
-                      padding: '12px 16px',
-                      borderRadius: m.sender === 'user' ? '14px 14px 0 14px' : '0 14px 14px 14px',
-                      fontSize: '13.5px',
-                      lineHeight: '1.6',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.01)'
-                    }}
-                  >
-                    {m.text}
-                  </div>
-
-                  {m.sender === 'user' && (
-                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(179, 139, 77, 0.1)', border: '1px solid rgba(179,139,77,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <User size={16} style={{ color: 'var(--color-secondary)' }} />
-                    </div>
-                  )}
-                </div>
-              )))}
-              {/* Collapsible Chronological Agent Mind Timeline */}
-              {statusLogs.length > 0 && isConnected && (
-                <div 
-                  className="glass-panel"
-                  style={{ 
-                    display: 'flex', 
-                    flexDirection: 'column',
-                    alignSelf: 'flex-start',
-                    width: '100%',
-                    maxWidth: '650px',
-                    marginTop: '12px',
-                    marginBottom: '12px',
-                    background: 'rgba(253, 249, 241, 0.75)',
-                    border: '1px solid rgba(179, 139, 77, 0.25)',
-                    borderRadius: '12px',
-                    boxShadow: '0 4px 20px -2px rgba(179, 139, 77, 0.05)',
-                    overflow: 'hidden'
-                  }}
-                >
-                  {/* Header */}
-                  <div 
-                    onClick={() => setShowAgentMind(!showAgentMind)}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'space-between',
-                      padding: '10px 16px',
-                      background: 'rgba(179, 139, 77, 0.04)',
-                      borderBottom: showAgentMind ? '1px solid rgba(179, 139, 77, 0.15)' : 'none',
-                      cursor: 'pointer',
-                      userSelect: 'none'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div className="pulse-glowing" style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-secondary)' }} />
-                      <span style={{ fontSize: '12px', fontWeight: '600', color: 'var(--color-primary)', letterSpacing: '-0.01em' }}>
-                        ⚡ Agent Mind & Live Execution Process
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)', fontWeight: '500' }}>
-                      {showAgentMind ? 'Collapse ▲' : 'Expand Process ▼'}
-                    </span>
-                  </div>
-
-                  {/* Body Timeline */}
-                  {showAgentMind && (
-                    <div 
-                      className="custom-scrollbar"
-                      style={{ 
-                        padding: '14px 18px', 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        gap: '10px',
-                        maxHeight: '260px',
-                        overflowY: 'auto'
-                      }}
-                    >
-                      {statusLogs.map((log, index, arr) => {
-                        const isLatest = index === arr.length - 1;
-                        const { prefix, color, bg } = parseLogDetails(log);
-                        return (
-                          <div 
-                            key={index} 
-                            style={{ 
-                              display: 'flex', 
-                              gap: '12px', 
-                              alignItems: 'flex-start',
-                              padding: '8px 12px',
-                              borderRadius: '8px',
-                              background: bg,
-                              border: isLatest ? '1.5px solid rgba(179,139,77,0.2)' : '1px solid transparent',
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, marginTop: '5px' }}>
-                              {isLatest ? (
-                                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-secondary)', boxShadow: '0 0 6px var(--color-secondary)' }} />
-                              ) : (
-                                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'rgba(179, 139, 77, 0.4)' }} />
-                              )}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 }}>
-                              <span style={{ fontSize: '10px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: color }}>
-                                {prefix}
-                              </span>
-                              <span style={{ 
-                                fontSize: '12.5px', 
-                                color: isLatest ? 'var(--text-primary)' : 'var(--text-secondary)', 
-                                fontWeight: isLatest ? '600' : '400',
-                                lineHeight: '1.5',
-                                wordBreak: 'break-word',
-                                fontFamily: 'var(--font-mono)'
-                              }}>
-                                {log}
-                              </span>
-                            </div>
+                <>
+                  {(() => {
+                    const lastMsg = messages[messages.length - 1];
+                    const isLastMsgAgent = lastMsg && lastMsg.sender === 'agent';
+                    
+                    if (isLastMsgAgent && statusLogs.length > 0) {
+                      const previousMessages = messages.slice(0, -1);
+                      return (
+                        <>
+                          {previousMessages.map((m, idx) => renderMessage(m, idx))}
+                          
+                          {/* Chronological Non-Collapsible Agent Mind Inline Timeline */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                            {statusLogs.map((log, idx) => {
+                              const { prefix, color, bg } = parseLogDetails(log);
+                              let icon = <Terminal size={12} style={{ color }} />;
+                              if (log.toLowerCase().includes("analyzing") || log.toLowerCase().includes("planning") || log.toLowerCase().includes("llm planner")) {
+                                icon = <Bot size={12} style={{ color }} />;
+                              }
+                              return (
+                                <div 
+                                  key={`log-${idx}`} 
+                                  className="animate-fade-in"
+                                  style={{ 
+                                    display: 'flex', 
+                                    gap: '10px', 
+                                    alignSelf: 'flex-start',
+                                    maxWidth: '85%',
+                                    background: bg,
+                                    border: `1px solid ${color}22`,
+                                    padding: '8px 12px',
+                                    borderRadius: '10px',
+                                    marginLeft: '46px',
+                                    boxShadow: '0 1px 4px rgba(0,0,0,0.01)',
+                                    marginTop: '2px',
+                                    marginBottom: '2px'
+                                  }}
+                                >
+                                  <div style={{ 
+                                    display: 'flex', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center', 
+                                    flexShrink: 0,
+                                    width: '18px',
+                                    height: '18px',
+                                    borderRadius: '5px',
+                                    background: `${color}10`,
+                                    marginTop: '1px'
+                                  }}>
+                                    {icon}
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
+                                    <span style={{ fontSize: '9px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: color }}>
+                                      {prefix}
+                                    </span>
+                                    <span style={{ 
+                                      fontSize: '12px', 
+                                      color: 'var(--text-secondary)', 
+                                      lineHeight: '1.4',
+                                      wordBreak: 'break-word',
+                                      fontFamily: 'var(--font-mono)'
+                                    }}>
+                                      {log}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                          
+                          {renderMessage(lastMsg, messages.length - 1)}
+                        </>
+                      );
+                    } else {
+                      return (
+                        <>
+                          {messages.map((m, idx) => renderMessage(m, idx))}
+                          
+                          {/* Live Streaming Logs */}
+                          {statusLogs.length > 0 && isConnected && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
+                              {statusLogs.map((log, idx) => {
+                                const { prefix, color, bg } = parseLogDetails(log);
+                                let icon = <Terminal size={12} style={{ color }} />;
+                                if (log.toLowerCase().includes("analyzing") || log.toLowerCase().includes("planning") || log.toLowerCase().includes("llm planner")) {
+                                  icon = <Bot size={12} style={{ color }} />;
+                                }
+                                return (
+                                  <div 
+                                    key={`log-${idx}`} 
+                                    className="animate-fade-in"
+                                    style={{ 
+                                      display: 'flex', 
+                                      gap: '10px', 
+                                      alignSelf: 'flex-start',
+                                      maxWidth: '85%',
+                                      background: bg,
+                                      border: `1px solid ${color}22`,
+                                      padding: '8px 12px',
+                                      borderRadius: '10px',
+                                      marginLeft: '46px',
+                                      boxShadow: '0 1px 4px rgba(0,0,0,0.01)',
+                                      marginTop: '2px',
+                                      marginBottom: '2px'
+                                    }}
+                                  >
+                                    <div style={{ 
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      justifyContent: 'center', 
+                                      flexShrink: 0,
+                                      width: '18px',
+                                      height: '18px',
+                                      borderRadius: '5px',
+                                      background: `${color}10`,
+                                      marginTop: '1px'
+                                    }}>
+                                      {icon}
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
+                                      <span style={{ fontSize: '9px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: color }}>
+                                        {prefix}
+                                      </span>
+                                      <span style={{ 
+                                        fontSize: '12px', 
+                                        color: 'var(--text-secondary)', 
+                                        lineHeight: '1.4',
+                                        wordBreak: 'break-word',
+                                        fontFamily: 'var(--font-mono)'
+                                      }}>
+                                        {log}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </>
+                      );
+                    }
+                  })()}
+                </>
               )}
               
               <div ref={scrollRef} />
