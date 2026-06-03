@@ -530,204 +530,63 @@ export default function ChatWindow({
                       ))}
                     </div>
                   </div>
-
                 </div>
               ) : (
                 <>
-                  {(() => {
-                    const lastMsg = messages[messages.length - 1];
-                    const isLastMsgAgent = lastMsg && lastMsg.sender === 'agent';
-                    
-                    if (isLastMsgAgent && statusLogs.length > 0) {
-                      const previousMessages = messages.slice(0, -1);
-                      return (
-                        <>
-                          {previousMessages.map((m, idx) => renderMessage(m, idx))}
-                          
-                          {/* Chronological Non-Collapsible Agent Mind Inline Timeline */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
-                            {statusLogs.map((log, idx) => {
-                              const { prefix, color, bg } = parseLogDetails(log);
-                              let icon = <Terminal size={12} style={{ color }} />;
-                              if (log.toLowerCase().includes("analyzing") || log.toLowerCase().includes("planning") || log.toLowerCase().includes("llm planner")) {
-                                icon = <Bot size={12} style={{ color }} />;
-                              }
-                              return (
-                                <div 
-                                  key={`log-${idx}`} 
-                                  className="animate-fade-in"
-                                  style={{ 
-                                    display: 'flex', 
-                                    gap: '10px', 
-                                    alignSelf: 'flex-start',
-                                    maxWidth: '85%',
-                                    background: bg,
-                                    border: `1px solid ${color}22`,
-                                    padding: '8px 12px',
-                                    borderRadius: '10px',
-                                    marginLeft: '46px',
-                                    boxShadow: '0 1px 4px rgba(0,0,0,0.01)',
-                                    marginTop: '2px',
-                                    marginBottom: '2px'
-                                  }}
-                                >
-                                  <div style={{ 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center', 
-                                    flexShrink: 0,
-                                    width: '18px',
-                                    height: '18px',
-                                    borderRadius: '5px',
-                                    background: `${color}10`,
-                                    marginTop: '1px'
-                                  }}>
-                                    {icon}
-                                  </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
-                                    <span style={{ fontSize: '9px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: color }}>
-                                      {prefix}
-                                    </span>
-                                    <span style={{ 
-                                      fontSize: '12px', 
-                                      color: 'var(--text-secondary)', 
-                                      lineHeight: '1.4',
-                                      wordBreak: 'break-word',
-                                      fontFamily: 'var(--font-mono)'
-                                    }}>
-                                      {log}
-                                    </span>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          
-                          {renderMessage(lastMsg, messages.length - 1)}
-                        </>
-                      );
-                    } else {
-                      return (
-                        <>
-                          {messages.map((m, idx) => renderMessage(m, idx))}
-                          
-                          {/* Live Streaming Logs */}
-                          {statusLogs.length > 0 && isConnected && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%' }}>
-                              {statusLogs.map((log, idx) => {
-                                const { prefix, color, bg } = parseLogDetails(log);
-                                let icon = <Terminal size={12} style={{ color }} />;
-                                if (log.toLowerCase().includes("analyzing") || log.toLowerCase().includes("planning") || log.toLowerCase().includes("llm planner")) {
-                                  icon = <Bot size={12} style={{ color }} />;
-                                }
-                                return (
-                                  <div 
-                                    key={`log-${idx}`} 
-                                    className="animate-fade-in"
-                                    style={{ 
-                                      display: 'flex', 
-                                      gap: '10px', 
-                                      alignSelf: 'flex-start',
-                                      maxWidth: '85%',
-                                      background: bg,
-                                      border: `1px solid ${color}22`,
-                                      padding: '8px 12px',
-                                      borderRadius: '10px',
-                                      marginLeft: '46px',
-                                      boxShadow: '0 1px 4px rgba(0,0,0,0.01)',
-                                      marginTop: '2px',
-                                      marginBottom: '2px'
-                                    }}
-                                  >
-                                    <div style={{ 
-                                      display: 'flex', 
-                                      alignItems: 'center', 
-                                      justifyContent: 'center', 
-                                      flexShrink: 0,
-                                      width: '18px',
-                                      height: '18px',
-                                      borderRadius: '5px',
-                                      background: `${color}10`,
-                                      marginTop: '1px'
-                                    }}>
-                                      {icon}
-                                    </div>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
-                                      <span style={{ fontSize: '9px', fontWeight: '800', letterSpacing: '0.04em', textTransform: 'uppercase', color: color }}>
-                                        {prefix}
-                                      </span>
-                                      <span style={{ 
-                                        fontSize: '12px', 
-                                        color: 'var(--text-secondary)', 
-                                        lineHeight: '1.4',
-                                        wordBreak: 'break-word',
-                                        fontFamily: 'var(--font-mono)'
-                                      }}>
-                                        {log}
-                                      </span>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {/* Live Streaming Loader Bubble */}
-                          {isAgentThinking && (
-                            <div 
-                              className="animate-fade-in"
-                              style={{ 
-                                display: 'flex', 
-                                gap: '10px', 
-                                alignSelf: 'flex-start',
-                                maxWidth: '75%',
-                                background: 'rgba(168, 95, 26, 0.05)',
-                                border: '1px solid rgba(168, 95, 26, 0.15)',
-                                padding: '10px 14px',
-                                borderRadius: '0 12px 12px 12px',
-                                marginLeft: '46px',
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.01)',
-                                marginTop: '4px',
-                                marginBottom: '4px',
-                                alignItems: 'center'
-                              }}
-                            >
-                              <div style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center', 
-                                flexShrink: 0,
-                                width: '20px',
-                                height: '20px',
-                                borderRadius: '5px',
-                                background: 'rgba(168, 95, 26, 0.1)',
-                                animation: 'spin 4s linear infinite',
-                                marginTop: '1px'
-                              }}>
-                                <Bot size={13} style={{ color: 'var(--color-primary)' }} />
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ 
-                                  fontSize: '12.5px', 
-                                  color: 'var(--text-secondary)', 
-                                  fontWeight: '600',
-                                  fontStyle: 'italic'
-                                }}>
-                                  {loadingPhrase}
-                                </span>
-                                {/* Animated Jumping Dots */}
-                                <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-                                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both' }} />
-                                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.2s' }} />
-                                  <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.4s' }} />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      );
-                    }
-                  })()}
+                  {messages.map((m, idx) => renderMessage(m, idx))}
+                  
+                  {/* Live Streaming Loader Bubble */}
+                  {isAgentThinking && (
+                    <div 
+                      className="animate-fade-in"
+                      style={{ 
+                        display: 'flex', 
+                        gap: '10px', 
+                        alignSelf: 'flex-start',
+                        maxWidth: '75%',
+                        background: 'rgba(168, 95, 26, 0.05)',
+                        border: '1px solid rgba(168, 95, 26, 0.15)',
+                        padding: '10px 14px',
+                        borderRadius: '0 12px 12px 12px',
+                        marginLeft: '46px',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.01)',
+                        marginTop: '4px',
+                        marginBottom: '4px',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        flexShrink: 0,
+                        width: '20px',
+                        height: '20px',
+                        borderRadius: '5px',
+                        background: 'rgba(168, 95, 26, 0.1)',
+                        animation: 'spin 4s linear infinite',
+                        marginTop: '1px'
+                      }}>
+                        <Bot size={13} style={{ color: 'var(--color-primary)' }} />
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ 
+                          fontSize: '12.5px', 
+                          color: 'var(--text-secondary)', 
+                          fontWeight: '600',
+                          fontStyle: 'italic'
+                        }}>
+                          {loadingPhrase}
+                        </span>
+                        {/* Animated Jumping Dots */}
+                        <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
+                          <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both' }} />
+                          <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.2s' }} />
+                          <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-secondary)', animation: 'bounce 1.4s infinite ease-in-out both', animationDelay: '0.4s' }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
               

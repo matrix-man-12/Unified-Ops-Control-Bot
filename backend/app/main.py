@@ -184,6 +184,51 @@ async def upload_document_or_media(file: UploadFile = File(...)):
 # Direct in-memory active session graphs database mapping
 ACTIVE_SESSIONS_STATE: Dict[str, Dict[str, Any]] = {}
 
+def generate_runbook_summary(plan: List[Dict[str, Any]]) -> str:
+    if not plan:
+        return "Execution completed."
+        
+    failed_steps = [s for s in plan if s.get("status") == "failed"]
+    
+    status_emoji = "✅" if not failed_steps else "❌"
+    title_text = "Runbook Execution Summary" if not failed_steps else "Runbook Execution Halted"
+    
+    summary = f"### {status_emoji} {title_text}\n\n"
+    
+    for s in plan:
+        step_num = s.get("step", "?")
+        desc = s.get("description", "Unknown step")
+        status = s.get("status", "pending")
+        
+        status_label = "Pending"
+        emoji = "⏳"
+        
+        if status == "completed":
+            status_label = "Completed"
+            emoji = "✅"
+        elif status == "failed":
+            status_label = "Failed"
+            emoji = "❌"
+        elif status == "running":
+            status_label = "Running"
+            emoji = "⚡"
+            
+        loop_mode = s.get("execution_mode") == "loop"
+        loop_details = ""
+        if loop_mode and s.get("loop_results"):
+            passed = s["loop_results"].get("passed", 0)
+            failed = s["loop_results"].get("failed", 0)
+            loop_details = f" ({passed} passed, {failed} failed)"
+            
+        summary += f"* **Step {step_num}: {desc}** — {emoji} {status_label}{loop_details}\n"
+        
+    if failed_steps:
+        summary += "\n**Workflow halted due to step failures.**"
+    else:
+        summary += "\n**All operations completed successfully.**"
+        
+    return summary
+
 @app.websocket("/ws/chat")
 async def websocket_chat_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -374,14 +419,17 @@ async def websocket_chat_endpoint(websocket: WebSocket):
                     }))
                 else:
                     # Graph reached final step successfully
-                    last_log = result_state["status_logs"][-1] if result_state["status_logs"] else "Execution complete."
+                    if result_state.get("plan"):
+                        completion_message = generate_runbook_summary(result_state["plan"])
+                    else:
+                        completion_message = result_state["status_logs"][-1] if result_state["status_logs"] else "Execution complete."
                     
                     # Persist agent completion response text to database
-                    save_message(session_id, "agent", last_log)
+                    save_message(session_id, "agent", completion_message)
                     
                     await websocket.send_text(json.dumps({
                         "type": "completion",
-                        "message": last_log,
+                        "message": completion_message,
                         "logs": result_state["status_logs"],
                         "plan": result_state["plan"],
                         "current_step_index": len(result_state["plan"])
