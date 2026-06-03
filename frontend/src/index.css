@@ -10,6 +10,7 @@
   --bg-panel-solid: #f6f3eb; /* Soft linen base */
   --bg-bubble-user: rgba(179, 139, 77, 0.09); /* Soft warm ochre tint */
   --bg-bubble-agent: #ffffff;                 /* Clean white paper */
+  --bg-card-active: #ffffff;                 /* Active card canvas */
   
   /* Warm Organic Accent Branding */
   --color-primary: #a85f1a;   /* Rich Bronze Accent */
@@ -35,7 +36,6 @@
   
   --shadow-neon: 0 10px 40px -10px rgba(139, 123, 102, 0.14); /* Feathered high-end shadow */
   --shadow-glow: 0 0 20px rgba(179, 139, 77, 0.12);
-  
   --transition-smooth: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -100,13 +100,13 @@ h1, h2, h3, h4, h5, h6 {
 .glass-panel-active {
   border-color: var(--border-neon-active);
   box-shadow: var(--shadow-neon), var(--shadow-glow);
-  background: #ffffff;
+  background: var(--bg-card-active);
 }
 
 /* Interactive Input Styling */
 .form-input {
   width: 100%;
-  background: #ffffff;
+  background: var(--bg-card-active);
   border: 1px solid var(--border-neon);
   color: var(--text-primary);
   padding: 12px 16px;
@@ -157,7 +157,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Standard Outline Transparent Buttons */
 .btn-outline {
-  background: #ffffff;
+  background: var(--bg-card-active);
   color: var(--text-primary);
   border: 1px solid var(--border-neon);
   padding: 12px 24px;

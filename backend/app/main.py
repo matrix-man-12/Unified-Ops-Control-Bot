@@ -66,6 +66,10 @@ def get_all_portals():
 @app.delete("/api/portals/{portal_id}")
 def remove_portal(portal_id: str):
     delete_portal(portal_id)
+    # Evict active sessions from global cache belonging to this portal
+    stale_sessions = [sid for sid, state in ACTIVE_SESSIONS_STATE.items() if state.get("portal_id") == portal_id]
+    for sid in stale_sessions:
+        del ACTIVE_SESSIONS_STATE[sid]
     return {"success": True, "message": "Portal removed."}
 
 # --- REST Skills Routing ---

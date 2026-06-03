@@ -172,69 +172,94 @@ export default function App() {
     setStatusLogs([]);
     setInterruptPayload(null);
 
-    // Initialize websocket connection
-    const ws = new WebSocket(`ws://${window.location.hostname}:8000/ws/chat`);
-    
-    ws.onopen = () => {
-      setIsConnected(true);
-      console.log('WS Connection established for session:', session_id);
+    let ws = null;
+    let reconnectTimeout = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    let isCleanCleanup = false;
+
+    const connect = () => {
+      console.log(`Establishing WebSocket Connection (Attempt ${reconnectAttempts + 1}/${maxReconnectAttempts})...`);
+      ws = new WebSocket(`ws://${window.location.hostname}:8000/ws/chat`);
       
-      // Instantly restore past chat messages and step log audits
-      ws.send(JSON.stringify({
-        type: 'restore',
-        portal_id: activePortalId,
-        session_id: session_id,
-        model_provider: modelProvider
-      }));
-    };
-    
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      
-      if (data.type === 'restore') {
-        setMessages(data.messages || []);
-        setStatusLogs(data.logs || []);
-        if (data.plan) setPlan(data.plan);
-        if (data.current_step_index !== undefined) setCurrentStepIndex(data.current_step_index);
-      }
-      
-      else if (data.type === 'logs') {
-        setStatusLogs(data.logs);
-      } 
-      
-      else if (data.type === 'interrupt') {
-        setInterruptPayload(data.payload);
-        setStatusLogs(data.logs);
-        if (data.plan) setPlan(data.plan);
-        if (data.current_step_index !== undefined) setCurrentStepIndex(data.current_step_index);
-      } 
-      
-      else if (data.type === 'completion') {
-        setMessages(prev => [...prev, { sender: 'agent', text: data.message }]);
-        setStatusLogs(data.logs);
-        if (data.plan) setPlan(data.plan);
-        if (data.current_step_index !== undefined) setCurrentStepIndex(data.current_step_index);
-        setInterruptPayload(null);
+      ws.onopen = () => {
+        setIsConnected(true);
+        reconnectAttempts = 0; // Reset attempts on successful connection
+        console.log('WS Connection established for session:', session_id);
         
-        // Reload list to update chat titles dynamically
-        fetchSessions(activePortalId);
-      } 
+        // Instantly restore past chat messages and step log audits
+        ws.send(JSON.stringify({
+          type: 'restore',
+          portal_id: activePortalId,
+          session_id: session_id,
+          model_provider: modelProvider
+        }));
+      };
       
-      else if (data.type === 'error') {
-        showToast('Systems Error: ' + data.message, 'error');
-        setStatusLogs(prev => [...prev, `ERROR: ${data.message}`]);
-      }
-    };
-    
-    ws.onclose = () => {
-      setIsConnected(false);
-      console.log('WS Connection closed');
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        
+        if (data.type === 'restore') {
+          setMessages(data.messages || []);
+          setStatusLogs(data.logs || []);
+          if (data.plan) setPlan(data.plan);
+          if (data.current_step_index !== undefined) setCurrentStepIndex(data.current_step_index);
+        }
+        
+        else if (data.type === 'logs') {
+          setStatusLogs(data.logs);
+        } 
+        
+        else if (data.type === 'interrupt') {
+          setInterruptPayload(data.payload);
+          setStatusLogs(data.logs);
+          if (data.plan) setPlan(data.plan);
+          if (data.current_step_index !== undefined) setCurrentStepIndex(data.current_step_index);
+        } 
+        
+        else if (data.type === 'completion') {
+          setMessages(prev => [...prev, { sender: 'agent', text: data.message }]);
+          setStatusLogs(data.logs);
+          if (data.plan) setPlan(data.plan);
+          if (data.current_step_index !== undefined) setCurrentStepIndex(data.current_step_index);
+          setInterruptPayload(null);
+          
+          // Reload list to update chat titles dynamically
+          fetchSessions(activePortalId);
+        } 
+        
+        else if (data.type === 'error') {
+          showToast('Systems Error: ' + data.message, 'error');
+          setStatusLogs(prev => [...prev, `ERROR: ${data.message}`]);
+        }
+      };
+      
+      ws.onclose = () => {
+        setIsConnected(false);
+        console.log('WS Connection closed');
+        
+        // Trigger retry logic if not intentionally closed by cleanup
+        if (!isCleanCleanup && reconnectAttempts < maxReconnectAttempts) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+          console.log(`Reconnecting WS in ${delay}ms...`);
+          reconnectTimeout = setTimeout(() => {
+            reconnectAttempts++;
+            connect();
+          }, delay);
+        } else if (reconnectAttempts >= maxReconnectAttempts) {
+          showToast('Operations WebSocket disconnected. Click refresh to sync gateway.', 'warning');
+        }
+      };
+
+      setSocket(ws);
     };
 
-    setSocket(ws);
+    connect();
 
     return () => {
-      ws.close();
+      isCleanCleanup = true;
+      if (ws) ws.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, [activePortalId, session_id]);
 

@@ -98,6 +98,20 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
     
     fallback_loop_count = detect_loop_count(user_query, history_context)
     is_loop_fallback = fallback_loop_count > 1
+
+    # Check if a bulk file was attached and parse it to pre-populate parameters
+    bulk_file_path = variables.get("_uploaded_bulk_file")
+    if bulk_file_path:
+        try:
+            from app.agents.executor import parse_bulk_file
+            parsed_rows = parse_bulk_file(bulk_file_path)
+            if parsed_rows:
+                variables["_parameter_list"] = parsed_rows
+                fallback_loop_count = len(parsed_rows)
+                is_loop_fallback = True
+                logs.append(f"Parsed file attachment: found {fallback_loop_count} records for batch execution.")
+        except Exception as e:
+            logs.append(f"Warning: Failed to parse uploaded bulk file: {e}")
     
     # 2. Compile pre-defined Project Skills context dynamically for the LLM
     skills_context = "No pre-defined Project Skills registered."
@@ -255,8 +269,15 @@ def plan_node(state: AgentState) -> Dict[str, Any]:
                         s["execution_mode"] = "loop" if is_loop_fallback else "single"
                         s["loop_count"] = fallback_loop_count
                         s["current_loop_index"] = 0
-                        s["parameter_list"] = []
+                        s["parameter_list"] = variables.get("_parameter_list", []) if is_loop_fallback else []
                         s["loop_results"] = {"passed": 0, "failed": 0, "details": []} if is_loop_fallback else None
+                    else:
+                        if s.get("execution_mode") == "loop":
+                            s["loop_count"] = max(s.get("loop_count", 0), fallback_loop_count)
+                            if not s.get("parameter_list"):
+                                s["parameter_list"] = variables.get("_parameter_list", [])
+                            if not s.get("loop_results"):
+                                s["loop_results"] = {"passed": 0, "failed": 0, "details": []}
                         
                     if "requires_approval" not in s:
                         m = s.get("method", "get").lower()

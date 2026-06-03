@@ -3,6 +3,7 @@ import { Bot, User, Terminal, ListTodo, AlertTriangle, CheckCircle, HelpCircle, 
 import DynamicForm from './DynamicForm';
 import ConfirmationCard from './ConfirmationCard';
 import PlanVerificationCard from './PlanVerificationCard';
+import FileUploader from './FileUploader';
 
 const LOADING_PHRASES = [
   "Waking up the hamsters in the server rack...",
@@ -67,6 +68,22 @@ export default function ChatWindow({
   const [activeTab, setActiveTab] = useState('chat'); // chat, plan, terminal
   const [chatInput, setChatInput] = useState('');
   const [loadingPhrase, setLoadingPhrase] = useState(LOADING_PHRASES[0]);
+  const [showUploader, setShowUploader] = useState(false);
+  const [consoleFilter, setConsoleFilter] = useState('ALL');
+  const [stepStartTimes, setStepStartTimes] = useState({});
+  const [stepDurations, setStepDurations] = useState({});
+
+  useEffect(() => {
+    plan.forEach(step => {
+      const stepId = step.id;
+      if (step.status === 'running' && !stepStartTimes[stepId]) {
+        setStepStartTimes(prev => ({ ...prev, [stepId]: Date.now() }));
+      } else if ((step.status === 'completed' || step.status === 'failed') && stepStartTimes[stepId] && !stepDurations[stepId]) {
+        const elapsed = ((Date.now() - stepStartTimes[stepId]) / 1000).toFixed(1);
+        setStepDurations(prev => ({ ...prev, [stepId]: `${elapsed}s` }));
+      }
+    });
+  }, [plan, stepStartTimes, stepDurations]);
 
   // Determine if the agent is actively thinking/processing
   const isAgentThinking = messages.length > 0 && messages[messages.length - 1].sender === 'user';
@@ -167,7 +184,7 @@ export default function ChatWindow({
       
       <div 
         style={{ 
-          background: m.sender === 'user' ? 'var(--color-primary)' : 'var(--color-bg-paper)',
+          background: m.sender === 'user' ? 'var(--color-primary)' : 'var(--bg-bubble-agent)',
           border: '1px solid var(--border-neon)',
           color: m.sender === 'user' ? '#fff' : 'var(--text-primary)',
           padding: '12px 16px',
@@ -196,7 +213,7 @@ export default function ChatWindow({
         flexDirection: 'column', 
         height: '100%', 
         overflow: 'hidden', 
-        background: 'rgba(253, 251, 247, 0.95)',
+        background: 'var(--bg-panel)',
         border: '1px solid var(--border-neon)' 
       }}
     >
@@ -768,8 +785,26 @@ export default function ChatWindow({
 
             {/* Spacious Premium Unified Prompt Bar */}
             <div style={{ padding: '20px 24px', borderTop: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)', flexShrink: 0 }}>
-              <form onSubmit={onSubmitMessage} style={{ width: '100%' }}>
+              <form onSubmit={onSubmitMessage} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 
+                {showUploader && (
+                  <div style={{ animation: 'fadeIn 0.2s ease', width: '100%' }}>
+                    <FileUploader 
+                      activePortalId={activePortalId} 
+                      onUploadComplete={(savedPath, filename) => {
+                        if (savedPath) {
+                          setUploadedFilePath(savedPath);
+                          setUploadedFileName(filename);
+                          setUploadState('success');
+                        } else {
+                          clearAttachment();
+                        }
+                      }}
+                      showToast={showToast}
+                    />
+                  </div>
+                )}
+
                 <div style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -778,17 +813,9 @@ export default function ChatWindow({
                   borderRadius: '12px',
                   padding: '10px 14px',
                   boxShadow: '0 2px 8px rgba(0,0,0,0.01)',
-                  position: 'relative'
+                  position: 'relative',
+                  width: '100%'
                 }}>
-                  
-                  {/* Native Hidden input file attachment */}
-                  <input 
-                    type="file"
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                    onChange={handleFileChange}
-                    accept=".csv,.xlsx,.xls,.json,.png,.jpg,.jpeg,.mp4"
-                  />
 
                   {/* Multiline spacious operational request prompt */}
                   <textarea
@@ -833,12 +860,12 @@ export default function ChatWindow({
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <button
                         type="button"
-                        disabled={!activePortalId || uploadState === 'uploading'}
-                        onClick={() => fileInputRef.current.click()}
+                        disabled={!activePortalId}
+                        onClick={() => setShowUploader(!showUploader)}
                         style={{
-                          background: 'transparent',
+                          background: showUploader ? 'rgba(179, 139, 77, 0.08)' : 'transparent',
                           border: 'none',
-                          color: 'var(--text-secondary)',
+                          color: showUploader ? 'var(--color-primary)' : 'var(--text-secondary)',
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
@@ -849,15 +876,14 @@ export default function ChatWindow({
                           fontWeight: '500'
                         }}
                         className="hover-accent"
-                        title="Upload spreadsheet or media attachments"
+                        title="Toggle spreadsheet or media drag-drop uploader panel"
                       >
                         <Paperclip size={14} style={{ color: 'var(--color-primary)' }} />
                         <span>
-                          {uploadState === 'uploading' ? 'Uploading...' : 'Attach File'}
+                          {showUploader ? 'Hide Uploader' : (uploadedFileName ? 'Change File' : 'Attach File')}
                         </span>
                       </button>
                       
-                      {/* Upload Chip */}
                       {uploadedFileName && (
                         <div style={{
                           display: 'flex',
@@ -962,6 +988,11 @@ export default function ChatWindow({
                           🔄 LOOP MODE ({step.loop_count} Items)
                         </span>
                       )}
+                      {stepDurations[step.id] && (
+                        <span style={{ fontSize: '10px', fontWeight: 'bold', background: 'rgba(179, 139, 77, 0.1)', color: 'var(--color-secondary)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(179,139,77,0.2)' }}>
+                          ⏱️ {stepDurations[step.id]}
+                        </span>
+                      )}
                     </div>
                     <span style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
                       {step.description}
@@ -1022,45 +1053,84 @@ export default function ChatWindow({
         {activeTab === 'terminal' && (
           <div style={{ flex: '1', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '24px', background: '#181614' }}>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#b38b4d', fontSize: '12px', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', marginBottom: '16px', fontFamily: 'var(--font-header)', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
-              <Terminal size={15} />
-              <span>Real-Time Systems Diagnostics Console Shell</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '12px', marginBottom: '16px', flexShrink: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#b38b4d', fontSize: '12px', fontFamily: 'var(--font-header)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                <Terminal size={15} />
+                <span>Real-Time Systems Diagnostics Console Shell</span>
+              </div>
+              {/* Category Filter Chips */}
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {['ALL', 'PLANNER', 'NETWORK', 'GATEWAY', 'SUCCESS', 'FAILURE'].map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setConsoleFilter(cat)}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '9.5px',
+                      borderRadius: '5px',
+                      border: '1px solid',
+                      borderColor: consoleFilter === cat ? '#b38b4d' : 'rgba(255,255,255,0.1)',
+                      background: consoleFilter === cat ? '#b38b4d' : 'transparent',
+                      color: consoleFilter === cat ? '#181614' : 'rgba(255,255,255,0.6)',
+                      cursor: 'pointer',
+                      fontWeight: '700',
+                      textTransform: 'uppercase',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
             </div>
             
-            <div 
-              className="custom-scrollbar"
-              style={{ 
-                flex: '1', 
-                overflowY: 'auto', 
-                fontFamily: 'var(--font-mono)', 
-                fontSize: '11.5px', 
-                color: '#f5f5f4', 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: '8px', 
-                paddingRight: '6px',
-                lineHeight: '1.5'
-              }}
-            >
-              {statusLogs.map((log, index) => {
-                const { prefix, color } = parseLogDetails(log);
+            {(() => {
+              const filtered = statusLogs.filter(log => {
+                if (consoleFilter === 'ALL') return true;
+                const { prefix } = parseLogDetails(log);
+                const prefixClean = prefix.replace(/[✅🧠📡❌🛡️⚙️\s\[\]]/g, '').toUpperCase();
+                return prefixClean === consoleFilter;
+              });
+
+              if (filtered.length === 0) {
                 return (
-                  <div key={index} style={{ wordBreak: 'break-all', display: 'flex', gap: '8px', padding: '2px 0' }}>
-                    <span style={{ color: '#b38b4d', marginRight: '4px', flexShrink: 0 }}>&gt;</span>
-                    <span style={{ color: color, fontWeight: '700', flexShrink: 0, textTransform: 'uppercase', fontSize: '9px', width: '70px' }}>
-                      {prefix.replace(/[✅🧠📡❌🛡️⚙️\s\[\]]/g, '')}:
-                    </span>
-                    <span style={{ color: color === '#b91c1c' ? '#fca5a5' : '#f5f5f4' }}>{log}</span>
+                  <div style={{ color: 'rgba(255,255,255,0.15)', fontStyle: 'italic', fontFamily: 'var(--font-mono)', fontSize: '11.5px' }}>
+                    No {consoleFilter.toLowerCase()} logs found in this session...
                   </div>
                 );
-              })}
-              
-              {statusLogs.length === 0 && (
-                <div style={{ color: 'rgba(255,255,255,0.15)', fontStyle: 'italic' }}>
-                  Awaiting operational node logs...
+              }
+
+              return (
+                <div 
+                  className="custom-scrollbar"
+                  style={{ 
+                    flex: '1', 
+                    overflowY: 'auto', 
+                    fontFamily: 'var(--font-mono)', 
+                    fontSize: '11.5px', 
+                    color: '#f5f5f4', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '8px', 
+                    paddingRight: '6px',
+                    lineHeight: '1.5'
+                  }}
+                >
+                  {filtered.map((log, index) => {
+                    const { prefix, color } = parseLogDetails(log);
+                    return (
+                      <div key={index} style={{ wordBreak: 'break-all', display: 'flex', gap: '8px', padding: '2px 0' }}>
+                        <span style={{ color: '#b38b4d', marginRight: '4px', flexShrink: 0 }}>&gt;</span>
+                        <span style={{ color: color, fontWeight: '700', flexShrink: 0, textTransform: 'uppercase', fontSize: '9px', width: '70px' }}>
+                          {prefix.replace(/[✅🧠📡❌🛡️⚙️\s\[\]]/g, '')}:
+                        </span>
+                        <span style={{ color: color === '#b91c1c' ? '#fca5a5' : '#f5f5f4' }}>{log}</span>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+              );
+            })()}
             
           </div>
         )}

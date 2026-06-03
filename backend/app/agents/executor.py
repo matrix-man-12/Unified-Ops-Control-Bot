@@ -7,7 +7,7 @@ from app.agents.skill_manager import interpolate_inputs
 from app.database import get_portal
 
 def parse_bulk_file(file_path: str) -> List[Dict[str, Any]]:
-    """Parse bulk data files (CSV, JSON, XLSX) using local helpers."""
+    """Parse bulk data files (CSV, JSON, XLSX) using local helpers and normalize keys."""
     import csv
     from pathlib import Path
     
@@ -17,17 +17,24 @@ def parse_bulk_file(file_path: str) -> List[Dict[str, Any]]:
         
     ext = path.suffix.lower()
     
+    def clean_dict(d: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            str(k).strip().lower(): (v.strip() if isinstance(v, str) else v)
+            for k, v in d.items() if k is not None
+        }
+    
     if ext == ".json":
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data if isinstance(data, list) else [data]
+            raw_list = data if isinstance(data, list) else [data]
+            return [clean_dict(item) for item in raw_list if isinstance(item, dict)]
             
     elif ext == ".csv":
         rows = []
         with open(path, "r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             for r in reader:
-                rows.append(dict(r))
+                rows.append(clean_dict(dict(r)))
         return rows
         
     elif ext in [".xlsx", ".xls"]:
@@ -35,12 +42,13 @@ def parse_bulk_file(file_path: str) -> List[Dict[str, Any]]:
         wb = openpyxl.load_workbook(path)
         sheet = wb.active
         rows = []
-        # Extract headers from first row
-        headers = [cell.value for cell in sheet[1]]
+        # Extract headers from first row, filtering out None values
+        headers = [str(cell.value).strip() if cell.value is not None else f"col_{idx}" for idx, cell in enumerate(sheet[1])]
         for row in sheet.iter_rows(min_row=2, values_only=True):
-            if not any(row):
+            if not any(row is not None for row in row):
                 continue
-            rows.append(dict(zip(headers, row)))
+            row_dict = dict(zip(headers, row))
+            rows.append(clean_dict(row_dict))
         return rows
         
     return []

@@ -7,6 +7,8 @@ export default function SkillStudio({ portalId, skill, onClose, onSaveSuccess, s
   const [isProcessing, setIsProcessing] = useState(false);
   const [validationStatus, setValidationStatus] = useState({ valid: true, message: 'Ready' });
   const [skillId, setSkillId] = useState('');
+  const gutterRef = useRef(null);
+  const textareaRef = useRef(null);
   
   // Custom Modal state
   const [modal, setModal] = useState({ show: false, title: '', message: '', type: 'info' });
@@ -93,6 +95,32 @@ steps:
     }
     setValidationStatus({ valid: true, message: 'Ready' });
   }, [skill]);
+
+
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const start = e.target.selectionStart;
+      const end = e.target.selectionEnd;
+      const val = e.target.value;
+      const newVal = val.substring(0, start) + '  ' + val.substring(end);
+      setYamlContent(newVal);
+      
+      // Reset cursor position
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 2;
+        }
+      }, 0);
+    }
+  };
+
+  const handleScroll = () => {
+    if (gutterRef.current && textareaRef.current) {
+      gutterRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
 
   // Real-time basic validation and extracting Skill ID
   useEffect(() => {
@@ -365,27 +393,58 @@ steps:
             </div>
           </div>
  
-          {/* Text Area Code Editor */}
-          <textarea 
-            className="form-input"
-            value={yamlContent}
-            onChange={e => setYamlContent(e.target.value)}
-            style={{ 
-              flex: '1',
-              width: '100%',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '12px',
-              lineHeight: '1.6',
-              padding: '20px',
-              border: 'none',
-              background: '#fff',
-              color: 'var(--text-primary)',
-              resize: 'none',
-              outline: 'none',
-              borderRadius: '0'
-            }}
-            placeholder="# Paste or generate your runbook skill YAML here..."
-          />
+          {/* Editor Workspace Split Grid */}
+          <div style={{ flex: '1', display: 'flex', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', flex: '1', overflow: 'hidden', position: 'relative' }}>
+              {/* Line Numbers Gutter */}
+              <div 
+                ref={gutterRef}
+                style={{ 
+                  width: '40px', 
+                  background: 'var(--bg-panel-solid)', 
+                  borderRight: '1px solid var(--border-neon)', 
+                  fontFamily: 'var(--font-mono)', 
+                  fontSize: '12px', 
+                  color: 'var(--text-muted)', 
+                  textAlign: 'right', 
+                  padding: '20px 8px 20px 0', 
+                  userSelect: 'none',
+                  lineHeight: '1.6',
+                  overflowY: 'hidden'
+                }}
+              >
+                {yamlContent.split('\n').map((_, idx) => (
+                  <div key={idx}>{idx + 1}</div>
+                ))}
+              </div>
+
+              {/* Text Area Code Editor */}
+              <textarea 
+                ref={textareaRef}
+                className="form-input"
+                value={yamlContent}
+                onChange={e => setYamlContent(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onScroll={handleScroll}
+                style={{ 
+                  flex: '1',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '12px',
+                  lineHeight: '1.6',
+                  padding: '20px',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--text-primary)',
+                  resize: 'none',
+                  outline: 'none',
+                  borderRadius: '0',
+                  height: '100%'
+                }}
+                placeholder="# Paste or generate your runbook skill YAML here..."
+              />
+            </div>
+
+          </div>
  
           {/* Compile triggers footer */}
           <div style={{ padding: '16px 24px', borderTop: '1px solid var(--border-neon)', background: 'var(--color-bg-paper)', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>

@@ -101,6 +101,15 @@ export default function PortalSelector({
     e.preventDefault();
     if (!portalId || !name || !baseUrl) return;
 
+    if (swaggerDoc.trim()) {
+      try {
+        JSON.parse(swaggerDoc.trim());
+      } catch (err) {
+        showToast('OpenAPI Swagger Spec is not a valid JSON string. Please correct it.', 'error');
+        return;
+      }
+    }
+
     // Convert list to dictionary object
     const headersObj = {};
     headers.forEach(h => {
